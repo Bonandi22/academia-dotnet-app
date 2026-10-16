@@ -66,7 +66,9 @@ dotnet build .\backend\Academia.sln      # warnings de nullable reference (CS86x
 
 ### Git
 
-Repositório local sem remote configurado, só a branch `master`. Não commitar nem alterar o histórico sem pedido explícito do utilizador.
+Repositório privado em `github.com/Bonandi22/academia-dotnet-app`, branch principal `main`, sem CI configurado. O `gh` está em `C:\tools\gh\bin\gh.exe` (fora do PATH); em Git Bash invocar como `"/c/tools/gh/bin/gh.exe"`. Não commitar nem fazer push sem pedido explícito do utilizador.
+
+Atenção: existe um repositório git acidental com raiz em `C:\Users\elker` (toda a pasta pessoal, 1 commit, sem remote). Este projeto tem `.git` próprio e não é afetado, mas comandos git corridos a partir da home ou de outra pasta sem repo próprio vão parar lá.
 
 ## Arquitetura
 
