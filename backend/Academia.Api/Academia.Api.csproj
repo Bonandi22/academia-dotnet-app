@@ -4,6 +4,7 @@
     <ProjectReference Include="../Academia.Application/Academia.Application.csproj" />
     <ProjectReference Include="../Academia.Infrastructure/Academia.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="8.0.11" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
 </Project>

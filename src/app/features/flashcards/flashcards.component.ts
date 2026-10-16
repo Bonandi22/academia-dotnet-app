@@ -41,18 +41,7 @@ export class FlashcardsComponent {
   readonly currentCard = computed(() => this.cards[this.currentIndex()]);
   rate(rating: 'again' | 'good' | 'easy'): void {
     const card = this.currentCard();
-    const module = this.moduleForTopic(card.topic);
-    this.progress.rateFlashcard(String(this.currentIndex()), rating, card.front, module.id, module.title);
-  }
-
-  private moduleForTopic(topic: string): { id: string; title: string } {
-    const value = topic.toLowerCase();
-    if (value.includes('ef core') || value.includes('sql')) return { id: 'data', title: 'EF Core e SQL Server' };
-    if (value.includes('microserv')) return { id: 'microservices', title: 'Microserviços e RabbitMQ' };
-    if (value.includes('angular')) return { id: 'angular', title: 'Angular e RxJS' };
-    if (value.includes('react')) return { id: 'react', title: 'React e microfrontends' };
-    if (value.includes('arquitetura')) return { id: 'architecture', title: 'Arquitetura e padrões' };
-    return { id: 'csharp', title: 'C# e plataforma .NET' };
+    this.progress.rateFlashcard(card.id, rating, card.front, card.moduleId, card.moduleTitle);
   }
 
   previous(): void {

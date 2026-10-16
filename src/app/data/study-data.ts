@@ -86,6 +86,8 @@ export const STUDY_MODULES: StudyModule[] = [
 export interface QuizQuestion {
   id: string;
   topic: string;
+  moduleId: string;
+  moduleTitle: string;
   prompt: string;
   options: string[];
   correctIndex: number;
@@ -97,6 +99,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'di',
     topic: 'C# e .NET',
+    moduleId: 'csharp',
+    moduleTitle: 'C# e plataforma .NET',
     prompt: 'Qual é uma das principais vantagens da Dependency Injection?',
     options: [
       'Eliminar a necessidade de interfaces',
@@ -111,6 +115,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'async',
     topic: 'C# e .NET',
+    moduleId: 'csharp',
+    moduleTitle: 'C# e plataforma .NET',
     prompt: 'Qual afirmação sobre async/await é correta?',
     options: [
       'Cria sempre uma nova thread',
@@ -125,6 +131,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'tracking',
     topic: 'EF Core e SQL Server',
+    moduleId: 'data',
+    moduleTitle: 'EF Core e SQL Server',
     prompt: 'Quando é geralmente apropriado usar AsNoTracking()?',
     options: [
       'Quando se pretende editar a entidade e guardar as alterações com o mesmo contexto',
@@ -139,6 +147,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'nplus1',
     topic: 'EF Core e SQL Server',
+    moduleId: 'data',
+    moduleTitle: 'EF Core e SQL Server',
     prompt: 'O que caracteriza o problema N+1?',
     options: [
       'Uma query que usa exatamente dois índices',
@@ -153,6 +163,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'cors',
     topic: 'ASP.NET Core',
+    moduleId: 'aspnet',
+    moduleTitle: 'ASP.NET Core e APIs',
     prompt: 'O que é CORS?',
     options: [
       'Um mecanismo de autenticação de utilizadores',
@@ -167,6 +179,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'outbox',
     topic: 'Microserviços',
+    moduleId: 'microservices',
+    moduleTitle: 'Microserviços e RabbitMQ',
     prompt: 'Qual é o objetivo do padrão Outbox?',
     options: [
       'Substituir o banco de dados por uma fila',
@@ -181,6 +195,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'angular-switchmap',
     topic: 'Angular e RxJS',
+    moduleId: 'angular',
+    moduleTitle: 'Angular e RxJS',
     prompt: 'Num campo de pesquisa reativo, por que switchMap costuma ser útil?',
     options: [
       'Executa sempre todas as chamadas em paralelo',
@@ -195,6 +211,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'react-effect',
     topic: 'React',
+    moduleId: 'react',
+    moduleTitle: 'React e microfrontends',
     prompt: 'Qual é um uso adequado de useEffect?',
     options: [
       'Substituir todas as variáveis de estado',
@@ -209,17 +227,20 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
 ];
 
 export interface Flashcard {
+  id: string;
   front: string;
   back: string;
   topic: string;
+  moduleId: string;
+  moduleTitle: string;
 }
 
 export const FLASHCARDS: Flashcard[] = [
-  { topic: 'C# e .NET', front: 'Qual é a diferença entre autenticação e autorização?', back: 'Autenticação verifica a identidade; autorização determina o que essa identidade pode fazer.' },
-  { topic: 'EF Core', front: 'O que é o problema N+1?', back: 'Uma consulta inicial seguida de consultas adicionais por cada elemento, aumentando viagens à base de dados.' },
-  { topic: 'Microserviços', front: 'O que significa idempotência?', back: 'Repetir a mesma intenção não deve produzir efeitos adicionais além do resultado esperado.' },
-  { topic: 'Arquitetura', front: 'Qual é a regra central da Clean Architecture?', back: 'As dependências do código apontam para dentro, mantendo as regras de negócio independentes de detalhes externos.' },
-  { topic: 'Angular', front: 'Quando usar switchMap?', back: 'Quando um novo valor deve substituir o fluxo interno anterior, por exemplo numa pesquisa reativa.' },
-  { topic: 'React', front: 'Qual é a diferença entre props e state?', back: 'Props são entradas recebidas de um componente pai; state é o estado gerido pelo componente ou pelos seus hooks.' },
-  { topic: 'SQL Server', front: 'O que deves analisar antes de adicionar um índice?', back: 'Plano de execução, seletividade, padrão de consultas, custo de escrita, armazenamento e evidências de performance.' }
+  { id: 'auth-vs-authz', topic: 'C# e .NET', moduleId: 'csharp', moduleTitle: 'C# e plataforma .NET', front: 'Qual é a diferença entre autenticação e autorização?', back: 'Autenticação verifica a identidade; autorização determina o que essa identidade pode fazer.' },
+  { id: 'n-plus-1', topic: 'EF Core', moduleId: 'data', moduleTitle: 'EF Core e SQL Server', front: 'O que é o problema N+1?', back: 'Uma consulta inicial seguida de consultas adicionais por cada elemento, aumentando viagens à base de dados.' },
+  { id: 'idempotencia', topic: 'Microserviços', moduleId: 'microservices', moduleTitle: 'Microserviços e RabbitMQ', front: 'O que significa idempotência?', back: 'Repetir a mesma intenção não deve produzir efeitos adicionais além do resultado esperado.' },
+  { id: 'clean-architecture-regra', topic: 'Arquitetura', moduleId: 'architecture', moduleTitle: 'Arquitetura e padrões', front: 'Qual é a regra central da Clean Architecture?', back: 'As dependências do código apontam para dentro, mantendo as regras de negócio independentes de detalhes externos.' },
+  { id: 'switchmap', topic: 'Angular', moduleId: 'angular', moduleTitle: 'Angular e RxJS', front: 'Quando usar switchMap?', back: 'Quando um novo valor deve substituir o fluxo interno anterior, por exemplo numa pesquisa reativa.' },
+  { id: 'props-vs-state', topic: 'React', moduleId: 'react', moduleTitle: 'React e microfrontends', front: 'Qual é a diferença entre props e state?', back: 'Props são entradas recebidas de um componente pai; state é o estado gerido pelo componente ou pelos seus hooks.' },
+  { id: 'antes-de-indexar', topic: 'SQL Server', moduleId: 'data', moduleTitle: 'EF Core e SQL Server', front: 'O que deves analisar antes de adicionar um índice?', back: 'Plano de execução, seletividade, padrão de consultas, custo de escrita, armazenamento e evidências de performance.' }
 ];

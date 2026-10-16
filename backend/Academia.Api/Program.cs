@@ -39,13 +39,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
+builder.Services.AddHealthChecks().AddDbContextCheck<AcademiaDbContext>();
 
 // Laboratório de volume (só em Development; ver backend/lab/LAB.md).
 var labAtivo = builder.Configuration.LabAtivo();
 if (labAtivo) builder.Services.AddLab(builder.Configuration);
 
 var app = builder.Build();
+app.UseExceptionHandler();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
 app.UseCors("frontend");

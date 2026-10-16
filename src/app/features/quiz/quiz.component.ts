@@ -79,26 +79,14 @@ export class QuizComponent {
       : 'Usa este resultado como mapa de estudo. Revê os módulos recomendados e tenta novamente.';
   });
 
-  private moduleForTopic(topic: string): { id: string; title: string } {
-    const normalized = topic.toLowerCase();
-    if (normalized.includes('sql') || normalized.includes('ef core') || normalized.includes('dados')) return { id: 'data', title: 'EF Core e SQL Server' };
-    if (normalized.includes('microserv')) return { id: 'microservices', title: 'Microserviços e RabbitMQ' };
-    if (normalized.includes('angular')) return { id: 'angular', title: 'Angular e RxJS' };
-    if (normalized.includes('react')) return { id: 'react', title: 'React e microfrontends' };
-    if (normalized.includes('arquitetura') || normalized.includes('clean architecture')) return { id: 'architecture', title: 'Arquitetura e padrões' };
-    if (normalized.includes('asp.net') || normalized.includes('api') || normalized.includes('http')) return { id: 'aspnet', title: 'ASP.NET Core e APIs' };
-    return { id: 'csharp', title: 'C# e plataforma .NET' };
-  }
-
   letter(index: number): string { return String.fromCharCode(65 + index); }
   checkAnswer(): void {
     if (this.selectedAnswer() === null) return;
     const q = this.currentQuestion();
     this.answers.update(current => ({ ...current, [q.id]: this.selectedAnswer()! }));
     if (this.selectedAnswer() !== q.correctIndex) {
-      const target = this.moduleForTopic(q.topic);
       this.progressService.addReview({
-        id: `quiz:${q.id}`, title: q.prompt, moduleId: target.id, moduleTitle: target.title,
+        id: `quiz:${q.id}`, title: q.prompt, moduleId: q.moduleId, moduleTitle: q.moduleTitle,
         kind: 'quiz', reason: `Resposta incorreta no quiz. Revê o conceito: ${q.explanation}`
       });
     } else {

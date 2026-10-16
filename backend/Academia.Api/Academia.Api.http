@@ -44,6 +44,6 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "flashcardId": "0",
+  "flashcardId": "n-plus-1",
   "rating": "again"
 }
