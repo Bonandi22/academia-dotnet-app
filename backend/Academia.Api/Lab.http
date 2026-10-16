@@ -1,0 +1,110 @@
+### =====================================================================
+### LABORATÓRIO DE VOLUME — roteiro pela ordem do backend/lab/LAB.md
+### Corre cada pedido 2 vezes e anota o tempo da segunda (a primeira paga compilação e cache frio).
+### =====================================================================
+
+@baseUrl = http://localhost:5080
+
+### 0. Estado das tabelas e índices
+GET {{baseUrl}}/api/lab/estatisticas
+
+### ---------------------------------------------------------------------
+### PASSO 1 — Carga em volume (202 Accepted + job em background)
+### ---------------------------------------------------------------------
+
+### 1a. Iniciar o seed: 10 000 clientes, 50 000 contas, 5 000 000 transações
+POST {{baseUrl}}/api/lab/seed?transacoes=5000000
+
+### 1b. Acompanhar o progresso (repete até "concluido"; anota segundos e linhas/s)
+GET {{baseUrl}}/api/lab/seed/estado
+
+### ---------------------------------------------------------------------
+### PASSO 2 — Paginação: OFFSET vs keyset, em 3 cenários de índices
+### Repete os pedidos 2b–2e depois de cada cenário (2a).
+### ---------------------------------------------------------------------
+
+### 2a. Cenário de índices: nenhum | conta-data | cobertura | columnstore
+POST {{baseUrl}}/api/lab/indices/nenhum
+
+### 2b. OFFSET — página 1 (global)
+GET {{baseUrl}}/api/lab/transacoes/offset?pagina=1&tamanho=50
+
+### 2c. OFFSET — página 50 000 (salta 2 499 950 linhas)
+GET {{baseUrl}}/api/lab/transacoes/offset?pagina=50000&tamanho=50
+
+### 2d. KEYSET — primeira página (sem cursor)
+GET {{baseUrl}}/api/lab/transacoes/keyset?tamanho=50
+
+### 2e. KEYSET — posição profunda equivalente (meio do histórico)
+GET {{baseUrl}}/api/lab/transacoes/keyset?tamanho=50&depoisData=2025-05-01T00:00:00&depoisId=9223372036854775807
+
+### 2f. Por conta (conta "quente" 1 vs conta normal 40000)
+GET {{baseUrl}}/api/lab/transacoes/keyset?contaId=1&tamanho=50
+
+### 2g. Mesma página a pedir Descricao (coluna fora do índice → Key Lookup no plano)
+GET {{baseUrl}}/api/lab/transacoes/keyset?contaId=1&tamanho=50&incluirDescricao=true
+
+### ---------------------------------------------------------------------
+### PASSO 3 — Relatórios: SARGable vs não SARGable, rowstore vs columnstore
+### Corre no cenário "cobertura" e depois no "columnstore".
+### ---------------------------------------------------------------------
+
+### 3a. Relatório mensal SARGable (intervalo de datas)
+GET {{baseUrl}}/api/lab/relatorios/mensal?ano=2025&sargable=true
+
+### 3b. Relatório mensal NÃO SARGable (YEAR(DataMovimento) = @ano)
+GET {{baseUrl}}/api/lab/relatorios/mensal?ano=2025&sargable=false
+
+### 3c. Top contas: CTE + GROUP BY + RANK() OVER + JOINs
+GET {{baseUrl}}/api/lab/relatorios/top-contas?ano=2025&top=10
+
+### ---------------------------------------------------------------------
+### PASSO 4 — Escrita: SaveChanges por linha vs AddRange vs SqlBulkCopy
+### ---------------------------------------------------------------------
+
+### 4a. Benchmark (as linhas de teste são apagadas no fim)
+POST {{baseUrl}}/api/lab/benchmark/insercao?linhas=20000&linhasLinhaALinha=1000
+
+### ---------------------------------------------------------------------
+### PASSO 5 — Entrada idempotente + outbox
+### ---------------------------------------------------------------------
+
+### 5a. Criar transação (201 Created)
+POST {{baseUrl}}/api/lab/transacoes
+Content-Type: application/json
+Idempotency-Key: pedido-0001
+
+{ "contaId": 42, "valor": -125.50, "tipo": "PAGAMENTO", "descricao": "Fatura luz outubro" }
+
+### 5b. Repetir EXATAMENTE o mesmo pedido (200 OK, header Idempotent-Replayed: true, mesmo Id)
+POST {{baseUrl}}/api/lab/transacoes
+Content-Type: application/json
+Idempotency-Key: pedido-0001
+
+{ "contaId": 42, "valor": -125.50, "tipo": "PAGAMENTO", "descricao": "Fatura luz outubro" }
+
+### 5c. Mesma chave com conteúdo diferente (422 Unprocessable Entity)
+POST {{baseUrl}}/api/lab/transacoes
+Content-Type: application/json
+Idempotency-Key: pedido-0001
+
+{ "contaId": 42, "valor": -999.00, "tipo": "PAGAMENTO", "descricao": "Outro valor" }
+
+### 5d. Sem Idempotency-Key (400)
+POST {{baseUrl}}/api/lab/transacoes
+Content-Type: application/json
+
+{ "contaId": 42, "valor": 10, "tipo": "CREDITO" }
+
+### 5e. Ver o outbox (o worker publica a cada 2s; vê também a consola da API: linhas [OUTBOX])
+GET {{baseUrl}}/api/lab/outbox?top=10
+
+### ---------------------------------------------------------------------
+### PASSO 6 — Exportação em streaming (memória constante)
+### ---------------------------------------------------------------------
+
+### 6a. Exportar uma conta (pequeno)
+GET {{baseUrl}}/api/lab/exportar?ano=2025&contaId=1
+
+### 6b. Exportar o ano inteiro (~1,8 milhões de linhas). Vê na consola da API o tempo e a memória.
+GET {{baseUrl}}/api/lab/exportar?ano=2025

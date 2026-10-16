@@ -1,0 +1,47 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: "Change_this_password_123!"
+    ports:
+      - "3311:1433"
+    volumes:
+      - academia_sql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Change_this_password_123!' -C -Q 'SELECT 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Academia.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Academia: "Server=sqlserver,1433;Database=AcademiaDotNet;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False"
+      ConnectionStrings__Lab: "Server=sqlserver,1433;Database=AcademiaLab;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False"
+      Jwt__Secret: "LOCAL_DEVELOPMENT_SECRET_CHANGE_TO_32_CHARS_MINIMUM_2026"
+      Jwt__Issuer: AcademiaDotNet
+      Jwt__Audience: AcademiaDotNet.Client
+      AllowedOrigins__0: http://localhost:4200
+      AllowedOrigins__1: http://localhost:8080
+    ports:
+      - "5080:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  frontend:
+    build: .
+    ports:
+      - "4200:80"
+    depends_on:
+      - api
+
+volumes:
+  academia_sql_data:

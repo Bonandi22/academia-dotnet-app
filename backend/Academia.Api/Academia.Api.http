@@ -1,0 +1,49 @@
+@baseUrl = http://localhost:5080
+@token = COLOCA_AQUI_O_JWT_RECEBIDO_NO_LOGIN
+
+### Health
+GET {{baseUrl}}/health
+
+### Registar utilizador de teste (altera o email a cada execução)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "displayName": "Utilizador de Teste",
+  "email": "teste.academia@example.com",
+  "password": "UmaPasswordLocal123!"
+}
+
+### Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "teste.academia@example.com",
+  "password": "UmaPasswordLocal123!"
+}
+
+### Snapshot de aprendizagem
+GET {{baseUrl}}/api/learning/snapshot
+Authorization: Bearer {{token}}
+
+### Marcar aula concluída
+PUT {{baseUrl}}/api/learning/lessons
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "moduleId": "csharp",
+  "lessonId": "0",
+  "isCompleted": true
+}
+
+### Guardar avaliação de flashcard
+PUT {{baseUrl}}/api/learning/flashcards
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "flashcardId": "0",
+  "rating": "again"
+}
