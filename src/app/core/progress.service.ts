@@ -24,15 +24,20 @@ export interface ProgressSnapshot {
   quizAttempts: QuizAttempt[];
   flashcardRatings: Record<string, 'again' | 'good' | 'easy'>;
   deletedReviewIds: string[];
+  /** Aulas desmarcadas ainda não enviadas; sem isto o pull volta a marcá-las como concluídas. */
+  uncompletedLessons: string[];
 }
 
 const STORAGE_KEY = 'academia-dotnet-progress-v1';
+// Id do utilizador cuja conta absorveu o progresso local; ausente enquanto o progresso é anónimo.
+const OWNER_KEY = 'academia-dotnet-progress-owner-v1';
 const EMPTY_STATE: ProgressSnapshot = {
   completedLessons: [],
   reviews: [],
   quizAttempts: [],
   flashcardRatings: {},
-  deletedReviewIds: []
+  deletedReviewIds: [],
+  uncompletedLessons: []
 };
 
 @Injectable({ providedIn: 'root' })
@@ -53,12 +58,16 @@ export class ProgressService {
 
   toggleLesson(moduleId: string, sectionIndex: number): void {
     const key = this.lessonKey(moduleId, sectionIndex);
-    this.update(state => ({
-      ...state,
-      completedLessons: state.completedLessons.includes(key)
-        ? state.completedLessons.filter(item => item !== key)
-        : [...state.completedLessons, key]
-    }));
+    this.update(state => {
+      const wasComplete = state.completedLessons.includes(key);
+      return {
+        ...state,
+        completedLessons: wasComplete ? state.completedLessons.filter(item => item !== key) : [...state.completedLessons, key],
+        uncompletedLessons: wasComplete
+          ? [...new Set([...state.uncompletedLessons, key])]
+          : state.uncompletedLessons.filter(item => item !== key)
+      };
+    });
   }
 
   lessonProgress(moduleId: string, totalSections: number): number {
@@ -123,10 +132,28 @@ export class ProgressService {
     }));
   }
 
-  clearDeletedReviewIds(): void {
-    this.update(state => ({ ...state, deletedReviewIds: [] }));
+  /** Remove só os tombstones enviados, para não perder os criados durante a sincronização. */
+  clearDeletedReviewIds(sent: string[]): void {
+    const synced = new Set(sent);
+    this.update(state => ({ ...state, deletedReviewIds: state.deletedReviewIds.filter(id => !synced.has(id)) }));
   }
 
+  clearUncompletedLessons(sent: string[]): void {
+    const synced = new Set(sent);
+    this.update(state => ({ ...state, uncompletedLessons: state.uncompletedLessons.filter(key => !synced.has(key)) }));
+  }
+
+  /**
+   * Associa o progresso local a uma conta. Se pertencia a outra conta, é descartado
+   * para não ser enviado para a conta errada; devolve true nesse caso.
+   */
+  claimFor(userId: string): boolean {
+    const owner = this.readOwner();
+    const replaced = owner !== null && owner !== userId;
+    if (replaced) this.update(() => structuredClone(EMPTY_STATE));
+    try { localStorage.setItem(OWNER_KEY, userId); } catch { /* Sem storage não há progresso persistido a proteger. */ }
+    return replaced;
+  }
 
   exportSnapshot(): ProgressSnapshot {
     return JSON.parse(JSON.stringify(this.state())) as ProgressSnapshot;
@@ -152,12 +179,14 @@ export class ProgressService {
       if (duplicateIndex >= 0) attempts[duplicateIndex] = item;
       else attempts.push(item);
     }
+    const uncompleted = new Set(current.uncompletedLessons);
     const next: ProgressSnapshot = {
-      completedLessons: [...new Set([...(remote.completedLessons ?? []), ...current.completedLessons])],
+      completedLessons: [...new Set([...(remote.completedLessons ?? []), ...current.completedLessons])].filter(key => !uncompleted.has(key)),
       reviews: [...reviewsById.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       quizAttempts: attempts.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 50),
       flashcardRatings: { ...(remote.flashcardRatings ?? {}), ...current.flashcardRatings },
-      deletedReviewIds: [...deletedIds]
+      deletedReviewIds: [...deletedIds],
+      uncompletedLessons: [...uncompleted]
     };
     this.state.set(next);
     this.save(next);
@@ -184,11 +213,17 @@ export class ProgressService {
         reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
         quizAttempts: Array.isArray(parsed.quizAttempts) ? parsed.quizAttempts : [],
         flashcardRatings: parsed.flashcardRatings && typeof parsed.flashcardRatings === 'object' ? parsed.flashcardRatings : {},
-        deletedReviewIds: Array.isArray(parsed.deletedReviewIds) ? parsed.deletedReviewIds : []
+        deletedReviewIds: Array.isArray(parsed.deletedReviewIds) ? parsed.deletedReviewIds : [],
+        uncompletedLessons: Array.isArray(parsed.uncompletedLessons) ? parsed.uncompletedLessons : []
       };
     } catch {
       return { ...EMPTY_STATE };
     }
+  }
+
+  private readOwner(): string | null {
+    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(OWNER_KEY); }
+    catch { return null; }
   }
 
   private save(state: ProgressSnapshot): void {

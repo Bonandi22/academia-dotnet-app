@@ -84,9 +84,10 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 
 `ProgressService` (`src/app/core/progress.service.ts`) é a fonte de verdade no cliente: estado em signals, persistido em `localStorage` sob `academia-dotnet-progress-v1`. A aplicação funciona inteiramente sem conta nem API.
 
-`LearningSyncService` só corre quando o utilizador sincroniza: faz **push** (deleções de revisão, aulas, revisões, tentativas de quiz ainda não marcadas, flashcards), depois **pull** de `/api/learning/snapshot`, e termina em `ProgressService.mergeSnapshot()`, que une os dois lados. A união depende de três mecanismos que têm de ser preservados ao mexer aqui:
+`LearningSyncService` só corre quando o utilizador sincroniza: faz **push** (deleções de revisão, aulas desmarcadas e concluídas, revisões, tentativas de quiz ainda não marcadas, flashcards), depois **pull** de `/api/learning/snapshot`, e termina em `ProgressService.mergeSnapshot()`, que une os dois lados. A união depende destes mecanismos, que têm de ser preservados ao mexer aqui:
 
-- `deletedReviewIds` — tombstones locais; sem eles o pull ressuscita revisões apagadas.
+- `deletedReviewIds` e `uncompletedLessons` — tombstones locais; sem eles o pull ressuscita revisões apagadas e aulas desmarcadas. Depois do push limpam-se só as chaves enviadas (`clearDeletedReviewIds(sent)`, `clearUncompletedLessons(sent)`), não as criadas durante a sincronização.
+- Dono do progresso local (`academia-dotnet-progress-owner-v1`) — `ProgressService.claimFor(userId)` no início do sync. Progresso anónimo é absorvido pela conta; progresso de **outra** conta é descartado (com as assinaturas de quiz) para nunca ser enviado para a conta errada.
 - Assinatura de tentativa de quiz (`data|score|total|erradas`) guardada em `academia-dotnet-synced-quiz-attempts-v1`, para não duplicar tentativas (a API cria sempre uma linha nova em `POST /quiz-attempts`).
 - Deduplicação por janela de 120 s em `mergeSnapshot`, para tentativas cujo timestamp divergiu entre cliente e servidor.
 

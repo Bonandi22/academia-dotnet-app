@@ -69,7 +69,8 @@ export class AccountComponent {
     this.error.set(''); this.message.set(''); this.busy.set(true);
     try {
       const result = await this.syncService.sync();
-      this.message.set(`Sincronização concluída. ${result.lessons} aulas, ${result.reviews} revisões, ${result.quizzes} quizzes e ${result.flashcards} flashcards enviados; o estado remoto foi combinado com o progresso local.`);
+      const replaced = result.replacedLocal ? 'O progresso local pertencia a outra conta e foi substituído pelo desta. ' : '';
+      this.message.set(`${replaced}Sincronização concluída. ${result.lessons} aulas, ${result.reviews} revisões, ${result.quizzes} quizzes e ${result.flashcards} flashcards enviados; o estado remoto foi combinado com o progresso local.`);
     } catch (err) {
       this.error.set(this.describeError(err));
       throw err;
