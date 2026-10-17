@@ -108,7 +108,7 @@ learning.MapGet("/snapshot", async (ClaimsPrincipal principal, AcademiaDbContext
         .Take(50)
         .Select(x => new
         {
-            x.Id,
+            x.ClientAttemptId,
             x.Score,
             x.Total,
             x.WrongQuestionIdsJson,
@@ -117,16 +117,7 @@ learning.MapGet("/snapshot", async (ClaimsPrincipal principal, AcademiaDbContext
         .ToListAsync();
 
     var quizzes = quizRows
-        .Select(x => new QuizAttemptResponse(
-            x.Id,
-            x.Score,
-            x.Total,
-            JsonSerializer.Deserialize<List<string>>(
-                x.WrongQuestionIdsJson,
-                (JsonSerializerOptions?)null
-            ) ?? new List<string>(),
-            x.CompletedAt
-        ))
+        .Select(x => new QuizAttemptResponse(x.ClientAttemptId, x.Score, x.Total, ParseWrongQuestionIds(x.WrongQuestionIdsJson), x.CompletedAt))
         .ToList();
 
     var flashcards = await db.Flashcards.AsNoTracking().Where(x => x.UserId == userId)
@@ -170,13 +161,30 @@ learning.MapDelete("/reviews/{itemKey}", async (string itemKey, ClaimsPrincipal 
     db.Reviews.Remove(entity); await db.SaveChangesAsync(); return Results.NoContent();
 });
 
-learning.MapPost("/quiz-attempts", async (QuizAttemptRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
+learning.MapPost("/quiz-attempts", async (QuizAttemptRequest request, ClaimsPrincipal principal, AcademiaDbContext db, ILogger<Program> logger) =>
 {
-    if (request.Total < 1 || request.Total > 100 || request.Score < 0 || request.Score > request.Total || request.WrongQuestionIds is null || request.WrongQuestionIds.Count > request.Total)
+    if (request.Id == Guid.Empty || request.Total < 1 || request.Total > 100 || request.Score < 0 || request.Score > request.Total || request.WrongQuestionIds is null || request.WrongQuestionIds.Count > request.Total)
         return Results.BadRequest(new { message = "Resultado de quiz inválido." });
-    var attempt = new QuizAttempt { UserId = GetUserId(principal), Score = request.Score, Total = request.Total, WrongQuestionIdsJson = JsonSerializer.Serialize(request.WrongQuestionIds.Distinct().Take(request.Total)) };
-    db.QuizAttempts.Add(attempt); await db.SaveChangesAsync();
-    return Results.Created($"/api/learning/quiz-attempts/{attempt.Id}", new QuizAttemptResponse(attempt.Id, attempt.Score, attempt.Total, request.WrongQuestionIds, attempt.CompletedAt));
+    var userId = GetUserId(principal);
+    // Idempotente pelo id do cliente: reenviar (retry, sync repetido) devolve a tentativa já gravada.
+    var existing = await FindQuizAttemptAsync(db, userId, request.Id);
+    if (existing is not null) return Results.Ok(existing);
+
+    var now = DateTimeOffset.UtcNow;
+    var completedAt = request.CompletedAt is { } at && at <= now ? at : now;
+    var wrongIds = request.WrongQuestionIds.Distinct().Take(request.Total).ToList();
+    db.QuizAttempts.Add(new QuizAttempt { UserId = userId, ClientAttemptId = request.Id, Score = request.Score, Total = request.Total, WrongQuestionIdsJson = JsonSerializer.Serialize(wrongIds), CompletedAt = completedAt });
+    try { await db.SaveChangesAsync(); }
+    catch (DbUpdateException ex)
+    {
+        // Dois envios do mesmo id em simultâneo: o índice único (UserId, ClientAttemptId) trava o segundo.
+        logger.LogInformation(ex, "Tentativa de quiz {AttemptId} já gravada por um pedido concorrente.", request.Id);
+        db.ChangeTracker.Clear();
+        existing = await FindQuizAttemptAsync(db, userId, request.Id);
+        if (existing is null) throw;
+        return Results.Ok(existing);
+    }
+    return Results.Created($"/api/learning/quiz-attempts/{request.Id}", new QuizAttemptResponse(request.Id, request.Score, request.Total, wrongIds, completedAt));
 });
 
 learning.MapPut("/flashcards", async (FlashcardRatingRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
@@ -205,6 +213,13 @@ if (labAtivo) await app.Services.InitializeLabAsync(app.Logger);
 app.Run();
 
 static Guid GetUserId(ClaimsPrincipal principal) => Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException());
+static List<string> ParseWrongQuestionIds(string json) => JsonSerializer.Deserialize<List<string>>(json) ?? [];
+static async Task<QuizAttemptResponse?> FindQuizAttemptAsync(AcademiaDbContext db, Guid userId, Guid clientAttemptId)
+{
+    var row = await db.QuizAttempts.AsNoTracking().Where(x => x.UserId == userId && x.ClientAttemptId == clientAttemptId)
+        .Select(x => new { x.Score, x.Total, x.WrongQuestionIdsJson, x.CompletedAt }).SingleOrDefaultAsync();
+    return row is null ? null : new QuizAttemptResponse(clientAttemptId, row.Score, row.Total, ParseWrongQuestionIds(row.WrongQuestionIdsJson), row.CompletedAt);
+}
 static bool ValidKey(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Length <= max && !value.Contains('\\');
 static bool IsValidEmail(string email) => email.Length <= 320 && System.Net.Mail.MailAddress.TryCreate(email, out var parsed) && parsed is not null && parsed.Address.Equals(email, StringComparison.OrdinalIgnoreCase);
 static AuthResponse CreateAuthResponse(UserAccount user, TokenSettings settings)

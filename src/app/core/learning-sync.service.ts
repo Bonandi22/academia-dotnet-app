@@ -12,7 +12,8 @@ interface ServerSnapshot {
   flashcards: Array<{ flashcardId: string; rating: 'again'|'good'|'easy'; updatedAt: string }>;
 }
 
-const SYNCED_ATTEMPTS_KEY = 'academia-dotnet-synced-quiz-attempts-v1';
+// Registo de assinaturas da versão anterior; substituído pelo id da tentativa, só falta limpá-lo.
+const LEGACY_SYNCED_ATTEMPTS_KEY = 'academia-dotnet-synced-quiz-attempts-v1';
 
 @Injectable({ providedIn: 'root' })
 export class LearningSyncService {
@@ -20,9 +21,9 @@ export class LearningSyncService {
 
   async sync(): Promise<{ lessons: number; reviews: number; quizzes: number; flashcards: number; replacedLocal: boolean }> {
     const userId = this.auth.currentUser()?.id;
-    // Progresso de outra conta não pode ser enviado para esta; as marcas de quiz enviadas também eram dessa conta.
+    // Progresso de outra conta não pode ser enviado para esta.
     const replacedLocal = userId ? this.progress.claimFor(userId) : false;
-    if (replacedLocal) this.saveSyncedAttempts(new Set<string>());
+    try { localStorage.removeItem(LEGACY_SYNCED_ATTEMPTS_KEY); } catch { /* Sem storage não há nada a limpar. */ }
     const local = this.progress.exportSnapshot();
     let lessonCount = 0, reviewCount = 0, quizCount = 0, flashcardCount = 0;
 
@@ -57,15 +58,12 @@ export class LearningSyncService {
       reviewCount++;
     }
 
-    const synced = this.readSyncedAttempts();
+    // A API é idempotente pelo id: reenviar uma tentativa já gravada não a duplica.
     for (const attempt of local.quizAttempts) {
-      const signature = this.attemptSignature(attempt);
-      if (synced.has(signature)) continue;
       await firstValueFrom(this.http.post(`${environment.apiBaseUrl}/learning/quiz-attempts`, {
-        score: attempt.score, total: attempt.total, wrongQuestionIds: attempt.wrongQuestionIds
+        id: attempt.id, score: attempt.score, total: attempt.total, wrongQuestionIds: attempt.wrongQuestionIds, completedAt: attempt.date
       }));
-      synced.add(signature); quizCount++;
-      this.saveSyncedAttempts(synced);
+      quizCount++;
     }
 
     for (const [flashcardId, rating] of Object.entries(local.flashcardRatings)) {
@@ -74,30 +72,15 @@ export class LearningSyncService {
     }
 
     const remote = await firstValueFrom(this.http.get<ServerSnapshot>(`${environment.apiBaseUrl}/learning/snapshot`));
-    for (const attempt of remote.quizAttempts) {
-      synced.add(this.attemptSignature({ date: attempt.completedAt, score: attempt.score, total: attempt.total, wrongQuestionIds: attempt.wrongQuestionIds }));
-    }
-    this.saveSyncedAttempts(synced);
     const remoteState: ProgressSnapshot = {
       completedLessons: remote.lessons.filter(x => x.isCompleted).map(x => `${x.moduleId}::${x.lessonId}`),
       reviews: remote.reviews.map(x => ({ id: x.itemKey, title: x.title, moduleId: x.moduleId, moduleTitle: x.moduleTitle, kind: x.kind, reason: x.reason, done: x.isResolved, createdAt: x.createdAt })),
-      quizAttempts: remote.quizAttempts.map(x => ({ date: x.completedAt, score: x.score, total: x.total, wrongQuestionIds: x.wrongQuestionIds })),
+      quizAttempts: remote.quizAttempts.map(x => ({ id: x.id, date: x.completedAt, score: x.score, total: x.total, wrongQuestionIds: x.wrongQuestionIds })),
       flashcardRatings: Object.fromEntries(remote.flashcards.map(x => [x.flashcardId, x.rating])),
       deletedReviewIds: [],
       uncompletedLessons: []
     };
     this.progress.mergeSnapshot(remoteState);
     return { lessons: lessonCount, reviews: reviewCount, quizzes: quizCount, flashcards: flashcardCount, replacedLocal };
-  }
-
-  private attemptSignature(attempt: { date: string; score: number; total: number; wrongQuestionIds: string[] }): string {
-    return `${attempt.date}|${attempt.score}|${attempt.total}|${[...attempt.wrongQuestionIds].sort().join(',')}`;
-  }
-  private readSyncedAttempts(): Set<string> {
-    try { return new Set(JSON.parse(localStorage.getItem(SYNCED_ATTEMPTS_KEY) ?? '[]') as string[]); }
-    catch { return new Set<string>(); }
-  }
-  private saveSyncedAttempts(items: Set<string>): void {
-    try { localStorage.setItem(SYNCED_ATTEMPTS_KEY, JSON.stringify([...items].slice(-300))); } catch { /* Local sync marker is best-effort. */ }
   }
 }

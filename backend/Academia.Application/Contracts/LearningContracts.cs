@@ -6,7 +6,9 @@ public sealed record AuthResponse(string AccessToken, DateTimeOffset ExpiresAt, 
 public sealed record UserResponse(Guid Id, string DisplayName, string Email);
 public sealed record LessonProgressRequest(string ModuleId, string LessonId, bool IsCompleted);
 public sealed record ReviewRequest(string ItemKey, string Title, string ModuleId, string ModuleTitle, string Kind, string Reason, bool IsResolved = false);
-public sealed record QuizAttemptRequest(int Score, int Total, IReadOnlyList<string> WrongQuestionIds);
+/// <param name="Id">Gerado pelo cliente; reenviar o mesmo id não cria outra tentativa.</param>
+/// <param name="CompletedAt">Quando o quiz foi feito (pode ser antes da sincronização); omitido ou no futuro passa a "agora".</param>
+public sealed record QuizAttemptRequest(Guid Id, int Score, int Total, IReadOnlyList<string> WrongQuestionIds, DateTimeOffset? CompletedAt = null);
 public sealed record FlashcardRatingRequest(string FlashcardId, string Rating);
 public sealed record LearningSnapshotResponse(IReadOnlyList<LessonProgressResponse> Lessons, IReadOnlyList<ReviewResponse> Reviews, IReadOnlyList<QuizAttemptResponse> QuizAttempts, IReadOnlyList<FlashcardResponse> Flashcards);
 public sealed record LessonProgressResponse(string ModuleId, string LessonId, bool IsCompleted, DateTimeOffset UpdatedAt);

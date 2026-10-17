@@ -45,7 +45,7 @@ import { ProgressService, ReviewItem } from '../../core/progress.service';
     <section class="section quiz-history-section">
       <div class="section-heading"><div><span class="eyebrow">Evolução</span><h2>Histórico recente de quizzes</h2></div><a routerLink="/quiz" class="text-link">Fazer novo quiz →</a></div>
       <div class="quiz-history-list">
-        @for (attempt of progress.quizAttempts().slice(0, 5); track attempt.date) {
+        @for (attempt of progress.quizAttempts().slice(0, 5); track attempt.id) {
           <article class="quiz-history-item"><div><strong>{{ attempt.score }} / {{ attempt.total }}</strong><span>{{ formatDate(attempt.date) }}</span></div><div class="history-score-track"><div class="progress-fill" [style.width.%]="attempt.total ? attempt.score / attempt.total * 100 : 0"></div></div><span class="history-percent">{{ attempt.total ? Math.round(attempt.score / attempt.total * 100) : 0 }}%</span></article>
         } @empty {
           <div class="empty-state"><p>Ainda não há sessões concluídas. Faz um quiz para começares a acompanhar os teus resultados.</p><a class="button" routerLink="/quiz">Começar quiz</a></div>

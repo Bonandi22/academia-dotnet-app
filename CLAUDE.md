@@ -96,9 +96,8 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 `LearningSyncService` só corre quando o utilizador sincroniza: faz **push** (deleções de revisão, aulas desmarcadas e concluídas, revisões, tentativas de quiz ainda não marcadas, flashcards), depois **pull** de `/api/learning/snapshot`, e termina em `ProgressService.mergeSnapshot()`, que une os dois lados. A união depende destes mecanismos, que têm de ser preservados ao mexer aqui:
 
 - `deletedReviewIds` e `uncompletedLessons` — tombstones locais; sem eles o pull ressuscita revisões apagadas e aulas desmarcadas. Depois do push limpam-se só as chaves enviadas (`clearDeletedReviewIds(sent)`, `clearUncompletedLessons(sent)`), não as criadas durante a sincronização.
-- Dono do progresso local (`academia-dotnet-progress-owner-v1`) — `ProgressService.claimFor(userId)` no início do sync. Progresso anónimo é absorvido pela conta; progresso de **outra** conta é descartado (com as assinaturas de quiz) para nunca ser enviado para a conta errada.
-- Assinatura de tentativa de quiz (`data|score|total|erradas`) guardada em `academia-dotnet-synced-quiz-attempts-v1`, para não duplicar tentativas (a API cria sempre uma linha nova em `POST /quiz-attempts`).
-- Deduplicação por janela de 120 s em `mergeSnapshot`, para tentativas cujo timestamp divergiu entre cliente e servidor.
+- Dono do progresso local (`academia-dotnet-progress-owner-v1`) — `ProgressService.claimFor(userId)` no início do sync. Progresso anónimo é absorvido pela conta; progresso de **outra** conta é descartado para nunca ser enviado para a conta errada.
+- Id de tentativa de quiz (UUID gerado no cliente em `recordQuiz`) — `POST /quiz-attempts` é idempotente por `(UserId, ClientAttemptId)`: reenviar devolve 200 com a tentativa já gravada, por isso o sync envia sempre todas as tentativas locais e `mergeSnapshot` deduplica por `id`. A data enviada é a do quiz, não a da sincronização (datas no futuro passam a "agora"). Substitui a antiga assinatura `data|score|…` e a janela de 120 s.
 
 ### Formato das chaves
 

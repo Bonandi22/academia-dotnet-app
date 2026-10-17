@@ -91,6 +91,11 @@ namespace Academia.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid>("ClientAttemptId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
                     b.Property<DateTimeOffset>("CompletedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -108,6 +113,9 @@ namespace Academia.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ClientAttemptId")
+                        .IsUnique();
 
                     b.HasIndex("UserId", "CompletedAt");
 

@@ -31,6 +31,8 @@ public sealed class QuizAttempt
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
+    /// <summary>Id gerado pelo cliente; torna o envio idempotente (único por utilizador).</summary>
+    public Guid ClientAttemptId { get; set; }
     public int Score { get; set; }
     public int Total { get; set; }
     public string WrongQuestionIdsJson { get; set; } = "[]";

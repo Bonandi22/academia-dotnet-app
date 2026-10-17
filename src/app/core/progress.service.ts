@@ -13,6 +13,8 @@ export interface ReviewItem {
 }
 
 export interface QuizAttempt {
+  /** UUID gerado aqui; a API usa-o para tornar o envio idempotente e o merge deduplica por ele. */
+  id: string;
   date: string;
   score: number;
   total: number;
@@ -44,6 +46,11 @@ const EMPTY_STATE: ProgressSnapshot = {
 @Injectable({ providedIn: 'root' })
 export class ProgressService {
   private readonly state = signal<ProgressSnapshot>(this.load());
+
+  constructor() {
+    // Persiste já as conversões feitas em load() (chaves de aula, ids de tentativa), para serem estáveis.
+    this.save(this.state());
+  }
   readonly completedLessons = computed(() => this.state().completedLessons);
   readonly reviews = computed(() => this.state().reviews);
   readonly pendingReviews = computed(() => this.state().reviews.filter(item => !item.done));
@@ -109,7 +116,7 @@ export class ProgressService {
   recordQuiz(score: number, total: number, wrongQuestionIds: string[]): void {
     this.update(state => ({
       ...state,
-      quizAttempts: [{ date: new Date().toISOString(), score, total, wrongQuestionIds }, ...state.quizAttempts].slice(0, 30)
+      quizAttempts: [{ id: crypto.randomUUID(), date: new Date().toISOString(), score, total, wrongQuestionIds }, ...state.quizAttempts].slice(0, 30)
     }));
   }
 
@@ -169,17 +176,10 @@ export class ProgressService {
       const existing = reviewsById.get(item.id);
       if (!existing || new Date(item.createdAt).getTime() >= new Date(existing.createdAt).getTime()) reviewsById.set(item.id, item);
     }
-    const attempts: QuizAttempt[] = [...(remote.quizAttempts ?? [])];
-    for (const item of current.quizAttempts) {
-      const wrongKey = [...item.wrongQuestionIds].sort().join(',');
-      const duplicateIndex = attempts.findIndex(existing =>
-        existing.score === item.score && existing.total === item.total &&
-        [...existing.wrongQuestionIds].sort().join(',') === wrongKey &&
-        Math.abs(new Date(existing.date).getTime() - new Date(item.date).getTime()) < 120_000
-      );
-      if (duplicateIndex >= 0) attempts[duplicateIndex] = item;
-      else attempts.push(item);
-    }
+    // A mesma tentativa tem o mesmo id nos dois lados; a versão local prevalece.
+    const attemptsById = new Map<string, QuizAttempt>();
+    for (const item of [...(remote.quizAttempts ?? []), ...current.quizAttempts]) attemptsById.set(item.id, item);
+    const attempts = [...attemptsById.values()];
     const uncompleted = new Set(current.uncompletedLessons);
     const next: ProgressSnapshot = {
       completedLessons: [...new Set([...(remote.completedLessons ?? []), ...current.completedLessons])].filter(key => !uncompleted.has(key)),
@@ -214,7 +214,8 @@ export class ProgressService {
       return {
         completedLessons: lessonKeys(parsed.completedLessons),
         reviews: Array.isArray(parsed.reviews) ? parsed.reviews.map(item => ({ ...item, id: migrateReviewId(item.id) })) : [],
-        quizAttempts: Array.isArray(parsed.quizAttempts) ? parsed.quizAttempts : [],
+        // Tentativas anteriores aos ids recebem um agora; o construtor grava-o para não mudar a cada arranque.
+        quizAttempts: Array.isArray(parsed.quizAttempts) ? parsed.quizAttempts.map(item => item.id ? item : { ...item, id: crypto.randomUUID() }) : [],
         flashcardRatings: parsed.flashcardRatings && typeof parsed.flashcardRatings === 'object' ? parsed.flashcardRatings : {},
         deletedReviewIds: Array.isArray(parsed.deletedReviewIds) ? parsed.deletedReviewIds.map(migrateReviewId) : [],
         uncompletedLessons: lessonKeys(parsed.uncompletedLessons)

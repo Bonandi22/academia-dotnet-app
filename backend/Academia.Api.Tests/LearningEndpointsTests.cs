@@ -33,7 +33,7 @@ public sealed class LearningEndpointsTests(ApiFactory api)
         var (bob, _) = await api.CreateUserAsync();
         (await alice.PutAsJsonAsync("/api/learning/lessons", new LessonProgressRequest("csharp", "0", true))).EnsureSuccessStatusCode();
         (await alice.PutAsJsonAsync("/api/learning/reviews", Review())).EnsureSuccessStatusCode();
-        (await alice.PostAsJsonAsync("/api/learning/quiz-attempts", new QuizAttemptRequest(3, 5, ["q1", "q2"]))).EnsureSuccessStatusCode();
+        (await alice.PostAsJsonAsync("/api/learning/quiz-attempts", new QuizAttemptRequest(Guid.NewGuid(), 3, 5, ["q1", "q2"]))).EnsureSuccessStatusCode();
         (await alice.PutAsJsonAsync("/api/learning/flashcards", new FlashcardRatingRequest("auth-vs-authz", "again"))).EnsureSuccessStatusCode();
 
         var bobSnapshot = await bob.GetFromJsonAsync<LearningSnapshotResponse>("/api/learning/snapshot");
@@ -100,8 +100,75 @@ public sealed class LearningEndpointsTests(ApiFactory api)
     {
         var (client, _) = await api.CreateUserAsync();
 
-        var response = await client.PostAsJsonAsync("/api/learning/quiz-attempts", new QuizAttemptRequest(score, total, []));
+        var response = await client.PostAsJsonAsync("/api/learning/quiz-attempts", new QuizAttemptRequest(Guid.NewGuid(), score, total, []));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Tentativa_de_quiz_sem_id_do_cliente_devolve_400()
+    {
+        var (client, _) = await api.CreateUserAsync();
+
+        var response = await client.PostAsJsonAsync("/api/learning/quiz-attempts", new QuizAttemptRequest(Guid.Empty, 3, 5, []));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reenviar_a_mesma_tentativa_de_quiz_nao_a_duplica()
+    {
+        var (client, _) = await api.CreateUserAsync();
+        var attempt = new QuizAttemptRequest(Guid.NewGuid(), 4, 5, ["q3"], DateTimeOffset.UtcNow.AddDays(-2));
+
+        var first = await client.PostAsJsonAsync("/api/learning/quiz-attempts", attempt);
+        var retry = await client.PostAsJsonAsync("/api/learning/quiz-attempts", attempt with { Score = 5 });
+        var snapshot = await client.GetFromJsonAsync<LearningSnapshotResponse>("/api/learning/snapshot");
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var stored = Assert.Single(snapshot!.QuizAttempts);
+        Assert.Equal(attempt.Id, stored.Id);
+        Assert.Equal(4, stored.Score); // o reenvio não reescreve a tentativa original
+        Assert.True((attempt.CompletedAt!.Value - stored.CompletedAt).Duration() < TimeSpan.FromMilliseconds(1), "A data enviada pelo cliente devia ser preservada.");
+    }
+
+    [Fact]
+    public async Task Envios_simultaneos_da_mesma_tentativa_gravam_uma_so_linha()
+    {
+        var (client, _) = await api.CreateUserAsync();
+        var attempt = new QuizAttemptRequest(Guid.NewGuid(), 2, 5, ["q1"]);
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => client.PostAsJsonAsync("/api/learning/quiz-attempts", attempt)));
+        var snapshot = await client.GetFromJsonAsync<LearningSnapshotResponse>("/api/learning/snapshot");
+
+        Assert.All(responses, r => Assert.True(r.IsSuccessStatusCode, $"HTTP {(int)r.StatusCode}"));
+        Assert.Single(snapshot!.QuizAttempts);
+    }
+
+    [Fact]
+    public async Task Mesmo_id_de_tentativa_em_contas_diferentes_nao_colide()
+    {
+        var (alice, _) = await api.CreateUserAsync();
+        var (bob, _) = await api.CreateUserAsync();
+        var attempt = new QuizAttemptRequest(Guid.NewGuid(), 3, 5, []);
+
+        var fromAlice = await alice.PostAsJsonAsync("/api/learning/quiz-attempts", attempt);
+        var fromBob = await bob.PostAsJsonAsync("/api/learning/quiz-attempts", attempt);
+
+        Assert.Equal(HttpStatusCode.Created, fromAlice.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, fromBob.StatusCode);
+    }
+
+    [Fact]
+    public async Task Data_da_tentativa_no_futuro_passa_a_agora()
+    {
+        var (client, _) = await api.CreateUserAsync();
+        var before = DateTimeOffset.UtcNow;
+
+        await client.PostAsJsonAsync("/api/learning/quiz-attempts", new QuizAttemptRequest(Guid.NewGuid(), 3, 5, [], DateTimeOffset.UtcNow.AddYears(1)));
+        var snapshot = await client.GetFromJsonAsync<LearningSnapshotResponse>("/api/learning/snapshot");
+
+        Assert.InRange(Assert.Single(snapshot!.QuizAttempts).CompletedAt, before, DateTimeOffset.UtcNow);
     }
 }

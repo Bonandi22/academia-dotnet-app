@@ -32,6 +32,9 @@ public sealed class AcademiaDbContext(DbContextOptions<AcademiaDbContext> option
         });
         modelBuilder.Entity<QuizAttempt>(b => {
             b.HasKey(x => x.Id); b.HasIndex(x => new { x.UserId, x.CompletedAt });
+            // NEWID() preenche as linhas anteriores à coluna; a API exige sempre o id do cliente.
+            b.Property(x => x.ClientAttemptId).HasDefaultValueSql("NEWID()");
+            b.HasIndex(x => new { x.UserId, x.ClientAttemptId }).IsUnique();
             b.HasOne(x => x.User).WithMany(x => x.QuizAttempts).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<FlashcardProgress>(b => {
