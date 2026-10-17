@@ -103,7 +103,7 @@ O que já está aplicado (e coberto por testes de integração onde se aplica):
 - nginx com CSP (`script-src 'self'`), `X-Frame-Options`, `nosniff` e `Referrer-Policy`.
 - Dependências sem vulnerabilidades conhecidas (`npm audit`, `dotnet list package --vulnerable --include-transitive`).
 
-O token do cliente é mantido em `localStorage` nesta versão; ver os próximos passos.
+- Sessão num cookie `HttpOnly` + `SameSite=Strict` (e `Secure` com prefixo `__Host-` fora de Development): o JWT nunca chega ao JavaScript nem ao `localStorage`, por isso um XSS não o consegue roubar. Proteção CSRF: além do SameSite, os pedidos que alteram dados exigem o header `X-Requested-With` (403 sem ele); o CORS só aceita credenciais das origens em `AllowedOrigins`.
 
 ## Executar o Angular
 
@@ -140,15 +140,16 @@ A sincronização envia todo o progresso local num único pedido (`POST /api/lea
 |---|---|---|---|
 | GET | `/health` | Público | Health check |
 | POST | `/api/auth/register` | Público | Registar conta |
-| POST | `/api/auth/login` | Público | Iniciar sessão e receber JWT |
-| GET | `/api/auth/me` | JWT | Obter utilizador atual |
-| GET | `/api/learning/snapshot` | JWT | Obter snapshot de aprendizagem |
-| POST | `/api/learning/sync` | JWT | Enviar todo o progresso numa transação e receber o snapshot (usado pela app) |
-| PUT | `/api/learning/lessons` | JWT | Atualizar conclusão de aula |
-| PUT | `/api/learning/reviews` | JWT | Criar/atualizar item de revisão |
-| DELETE | `/api/learning/reviews/{itemKey}` | JWT | Remover item de revisão |
-| POST | `/api/learning/quiz-attempts` | JWT | Guardar resultado de quiz |
-| PUT | `/api/learning/flashcards` | JWT | Guardar avaliação de flashcard |
+| POST | `/api/auth/login` | Público | Iniciar sessão (JWT num cookie HttpOnly) |
+| POST | `/api/auth/logout` | Público | Terminar sessão (apaga o cookie) |
+| GET | `/api/auth/me` | Sessão | Obter utilizador atual |
+| GET | `/api/learning/snapshot` | Sessão | Obter snapshot de aprendizagem |
+| POST | `/api/learning/sync` | Sessão | Enviar todo o progresso numa transação e receber o snapshot (usado pela app) |
+| PUT | `/api/learning/lessons` | Sessão | Atualizar conclusão de aula |
+| PUT | `/api/learning/reviews` | Sessão | Criar/atualizar item de revisão |
+| DELETE | `/api/learning/reviews/{itemKey}` | Sessão | Remover item de revisão |
+| POST | `/api/learning/quiz-attempts` | Sessão | Guardar resultado de quiz |
+| PUT | `/api/learning/flashcards` | Sessão | Guardar avaliação de flashcard |
 
 ## Validação e estado
 
@@ -159,7 +160,7 @@ A sincronização envia todo o progresso local num único pedido (`POST /api/lea
 ## Próximos passos recomendados para produção
 
 1. Testes unitários de componentes Angular e deploy automatizado a partir do CI (o CI em `.github/workflows/ci.yml` já corre tipos, testes, build, scans de dependências e build das imagens).
-2. Autenticação por cookie HttpOnly/Secure/SameSite (com proteção CSRF) em vez de token em `localStorage`, que fica exposto a XSS.
+2. Revogação de sessões no servidor (hoje um token roubado vale até expirar) e renovação do cookie antes de expirar, em vez de pedir login de hora a hora.
 3. Recuperação e verificação de conta, política de passwords (lista de passwords comprometidas) e registo que não revele se um email já existe (hoje devolve 409).
 4. Segredos num cofre (Key Vault, secrets do orquestrador) e arranque que falhe se a chave JWT de desenvolvimento chegar a produção.
 5. Utilizador SQL só com as permissões da aplicação em vez de `sa`, ligação encriptada (`Encrypt=True`) e backups automáticos com restauro testado.

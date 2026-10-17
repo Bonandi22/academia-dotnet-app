@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Academia.Application.Contracts;
 using Academia.Infrastructure.Persistence;
@@ -39,6 +38,8 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("ConnectionStrings:Academia", connectionString);
         builder.UseSetting("RateLimiting:AuthPermitLimit", AuthPermitLimit.ToString());
         builder.UseSetting("RateLimiting:LearningPermitLimit", "100000");
+        // O TestServer fala HTTP e o CookieContainer não reenvia cookies Secure por HTTP (o browser abre exceção para localhost).
+        builder.UseSetting("Auth:CookieSecure", "false");
         // Como em Development: pedidos ilegíveis lançam BadHttpRequestException, para testar o handler que os trata.
         builder.ConfigureTestServices(services => services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true));
     }
@@ -60,7 +61,14 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await DisposeAsync();
     }
 
-    /// <summary>Regista uma conta nova e devolve um cliente já autenticado com o token dela.</summary>
+    /// <summary>Todos os clientes de teste enviam o header anti-CSRF, como o interceptor do Angular.</summary>
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
+    }
+
+    /// <summary>Regista uma conta nova e devolve um cliente já autenticado: o cookie de sessão fica no cliente.</summary>
     public async Task<(HttpClient Client, AuthResponse Auth)> CreateUserAsync()
     {
         var client = CreateClient();
@@ -68,7 +76,6 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             new RegisterRequest("Utilizador de teste", $"teste-{Guid.NewGuid():N}@exemplo.pt", "password-de-teste-123"));
         response.EnsureSuccessStatusCode();
         var auth = (await response.Content.ReadFromJsonAsync<AuthResponse>())!;
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.AccessToken);
         return (client, auth);
     }
 }

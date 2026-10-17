@@ -143,7 +143,7 @@ Rever o `.cs` gerado antes de commitar. Uma base criada antes das migrations (pe
 - Componentes com **template inline** e sem `styles`/`styleUrls`: todo o CSS vive em `src/styles.css` e é partilhado por classes (`.button`, `.page-heading`, `.quiz-card`, …). Reutilizar classes existentes antes de criar novas.
 - Estado com signals/`computed`; sintaxe de controlo `@if`/`@for`.
 - Subscrições novas usam `takeUntilDestroyed(this.destroyRef)` (`inject(DestroyRef)`, operador de `@angular/core/rxjs-interop`) em vez de `ngOnDestroy` manual. Os dois `.subscribe()` existentes (`account.component.ts`, `study.component.ts`) ainda não seguem isto; esta regra fixa o padrão daqui para a frente, sem obrigação de migrar já.
-- O token JWT é injetado pelo `authInterceptor` funcional registado em `main.ts`; o URL da API vem de `src/environments/environment.ts` (`apiBaseUrl`), que tem de ficar coerente com `AllowedOrigins` da API.
+- A sessão é um JWT num cookie HttpOnly/SameSite=Strict (`Academia.Api/Auth/SessionCookie.cs`) que o JavaScript nunca vê: o login devolve só utilizador e `expiresAt`, guardados para a UI em `academia-dotnet-session-v3`. O `authInterceptor` (registado em `main.ts`) só atua em pedidos para `apiBaseUrl`: põe `withCredentials` e o header `X-Requested-With`, que a API exige em POST/PUT/DELETE de `/api/auth` e `/api/learning` (CSRF; sem ele, 403). Logout é `POST /api/auth/logout`, porque só o servidor apaga o cookie. Nunca voltar a pôr o token no corpo nem no `localStorage`; o URL da API vem de `src/environments/environment.ts` (`apiBaseUrl`), que tem de ficar coerente com `AllowedOrigins` da API.
 
 ## Regras de ouro — nunca fazer
 

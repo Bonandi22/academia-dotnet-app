@@ -1,5 +1,8 @@
 @baseUrl = http://localhost:5080
-@token = COLOCA_AQUI_O_JWT_RECEBIDO_NO_LOGIN
+
+# A sessão vai num cookie HttpOnly: depois do registo/login, o cliente HTTP do Rider guarda-o e
+# reenvia-o sozinho nos pedidos seguintes (não há token para copiar).
+# Pedidos que alteram dados levam X-Requested-With (proteção CSRF); sem ele a API responde 403.
 
 ### Health
 GET {{baseUrl}}/health
@@ -7,6 +10,7 @@ GET {{baseUrl}}/health
 ### Registar utilizador de teste (altera o email a cada execução)
 POST {{baseUrl}}/api/auth/register
 Content-Type: application/json
+X-Requested-With: XMLHttpRequest
 
 {
   "displayName": "Utilizador de Teste",
@@ -17,33 +21,40 @@ Content-Type: application/json
 ### Login
 POST {{baseUrl}}/api/auth/login
 Content-Type: application/json
+X-Requested-With: XMLHttpRequest
 
 {
   "email": "teste.academia@example.com",
   "password": "UmaPasswordLocal123!"
 }
 
+### Utilizador da sessão atual
+GET {{baseUrl}}/api/auth/me
+
 ### Snapshot de aprendizagem
 GET {{baseUrl}}/api/learning/snapshot
-Authorization: Bearer {{token}}
 
 ### Marcar aula concluída
 PUT {{baseUrl}}/api/learning/lessons
-Authorization: Bearer {{token}}
 Content-Type: application/json
+X-Requested-With: XMLHttpRequest
 
 {
   "moduleId": "csharp",
-  "lessonId": "0",
+  "lessonId": "async-await",
   "isCompleted": true
 }
 
 ### Guardar avaliação de flashcard
 PUT {{baseUrl}}/api/learning/flashcards
-Authorization: Bearer {{token}}
 Content-Type: application/json
+X-Requested-With: XMLHttpRequest
 
 {
-  "flashcardId": "n-plus-1",
+  "flashcardId": "auth-vs-authz",
   "rating": "again"
 }
+
+### Terminar sessão (apaga o cookie)
+POST {{baseUrl}}/api/auth/logout
+X-Requested-With: XMLHttpRequest

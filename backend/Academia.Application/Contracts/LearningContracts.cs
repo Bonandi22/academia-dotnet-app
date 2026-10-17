@@ -2,7 +2,7 @@ namespace Academia.Application.Contracts;
 
 public sealed record RegisterRequest(string DisplayName, string Email, string Password);
 public sealed record LoginRequest(string Email, string Password);
-public sealed record AuthResponse(string AccessToken, DateTimeOffset ExpiresAt, UserResponse User);
+public sealed record AuthResponse(DateTimeOffset ExpiresAt, UserResponse User);
 public sealed record UserResponse(Guid Id, string DisplayName, string Email);
 public sealed record LessonProgressRequest(string ModuleId, string LessonId, bool IsCompleted);
 public sealed record ReviewRequest(string ItemKey, string Title, string ModuleId, string ModuleTitle, string Kind, string Reason, bool IsResolved = false);

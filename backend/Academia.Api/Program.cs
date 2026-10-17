@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using Academia.Api.Auth;
 using Academia.Api.Lab;
 using Academia.Api.Learning;
 using Academia.Application.Contracts;
@@ -26,6 +27,7 @@ if (Encoding.UTF8.GetByteCount(jwt.Secret) < 32)
 // Em Production tem de vir de fora (variável de ambiente, .env, cofre) e ser diferente.
 if (builder.Environment.IsProduction() && IsVersionedJwtSecret(builder.Configuration, jwt.Secret))
     throw new InvalidOperationException("Jwt:Secret em Production não pode ser a chave versionada nos appsettings*.json. Define Jwt__Secret (ex.: JWT_SECRET no .env do docker-compose) com uma chave aleatória.");
+var cookieSecure = builder.Configuration.GetValue("Auth:CookieSecure", true);
 
 builder.Services.AddDbContext<AcademiaDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Academia")));
@@ -33,7 +35,7 @@ builder.Services.AddScoped<IPasswordHasher<UserAccount>, PasswordHasher<UserAcco
 builder.Services.AddSingleton(jwt);
 builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
     policy.WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:4200"])
-          .AllowAnyHeader().AllowAnyMethod()));
+          .AllowAnyHeader().AllowAnyMethod().AllowCredentials())); // credenciais = o cookie de sessão; só para estas origens
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -46,6 +48,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
     options.Events = new JwtBearerEvents
     {
+        // O token vem do cookie HttpOnly (SessionCookie), não de um header que o JavaScript tivesse de guardar.
+        OnMessageReceived = context =>
+        {
+            context.Token = context.Request.Cookies[SessionCookie.Name(cookieSecure)];
+            return Task.CompletedTask;
+        },
         // Um token bem assinado de uma conta que já não existe (apagada, ou outra base com a mesma chave) é uma
         // sessão inválida: 401 aqui, em vez de a escrita rebentar mais à frente na chave estrangeira.
         OnTokenValidated = async context =>
@@ -105,6 +113,22 @@ app.UseExceptionHandler();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 else { app.UseHsts(); app.UseHttpsRedirection(); }
 app.UseCors("frontend");
+// CSRF: com sessão em cookie, um site alheio podia disparar pedidos com ela. Além do SameSite=Strict, os pedidos que
+// alteram dados têm de trazer X-Requested-With: um formulário HTML não o consegue enviar e um fetch de outra origem
+// esbarra no CORS. O Lab (anónimo, só Development) fica de fora.
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    var changesState = !HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method) && !HttpMethods.IsOptions(context.Request.Method);
+    if (changesState && (path.StartsWithSegments("/api/auth") || path.StartsWithSegments("/api/learning"))
+        && string.IsNullOrEmpty(context.Request.Headers.XRequestedWith))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new { message = "Pedido recusado: falta o header X-Requested-With." });
+        return;
+    }
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter(); // depois da autenticação, para a política "learning" particionar por conta
@@ -113,7 +137,7 @@ if (labAtivo) app.MapLabEndpoints();
 app.MapGet("/api", () => Results.Ok(new { name = "Academia .NET API", version = "1.0.0" }));
 
 var auth = app.MapGroup("/api/auth").WithTags("Autenticação");
-auth.MapPost("/register", async (RegisterRequest request, AcademiaDbContext db, IPasswordHasher<UserAccount> hasher, TokenSettings settings) =>
+auth.MapPost("/register", async (RegisterRequest request, HttpResponse response, AcademiaDbContext db, IPasswordHasher<UserAccount> hasher, TokenSettings settings) =>
 {
     var name = request.DisplayName?.Trim() ?? "";
     var email = request.Email?.Trim().ToLowerInvariant() ?? "";
@@ -128,17 +152,24 @@ auth.MapPost("/register", async (RegisterRequest request, AcademiaDbContext db, 
     user.PasswordHash = hasher.HashPassword(user, password);
     db.Users.Add(user);
     await db.SaveChangesAsync();
-    return Results.Created("/api/auth/me", CreateAuthResponse(user, settings));
+    return Results.Created("/api/auth/me", IssueSession(response, user, settings, cookieSecure));
 }).AllowAnonymous().RequireRateLimiting("auth");
 
-auth.MapPost("/login", async (LoginRequest request, AcademiaDbContext db, IPasswordHasher<UserAccount> hasher, TokenSettings settings) =>
+auth.MapPost("/login", async (LoginRequest request, HttpResponse response, AcademiaDbContext db, IPasswordHasher<UserAccount> hasher, TokenSettings settings) =>
 {
     var email = request.Email?.Trim().ToLowerInvariant() ?? "";
     var user = await db.Users.SingleOrDefaultAsync(u => u.Email == email);
     if (user is null || hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password ?? "") == PasswordVerificationResult.Failed)
         return Results.Unauthorized();
-    return Results.Ok(CreateAuthResponse(user, settings));
+    return Results.Ok(IssueSession(response, user, settings, cookieSecure));
 }).AllowAnonymous().RequireRateLimiting("auth");
+
+// O cookie é HttpOnly: só o servidor o consegue apagar. Anónimo de propósito, para funcionar com a sessão já expirada.
+auth.MapPost("/logout", (HttpResponse response) =>
+{
+    SessionCookie.Delete(response, cookieSecure);
+    return Results.NoContent();
+}).AllowAnonymous();
 
 auth.MapGet("/me", async (ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
@@ -243,7 +274,8 @@ static bool IsVersionedJwtSecret(IConfiguration configuration, string secret) =>
         && provider.TryGet("Jwt:Secret", out var versioned) && versioned == secret);
 static Guid GetUserId(ClaimsPrincipal principal) => Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException());
 static bool IsValidEmail(string email) => email.Length <= 320 && System.Net.Mail.MailAddress.TryCreate(email, out var parsed) && parsed is not null && parsed.Address.Equals(email, StringComparison.OrdinalIgnoreCase);
-static AuthResponse CreateAuthResponse(UserAccount user, TokenSettings settings)
+/// <summary>Emite o JWT no cookie de sessão; o corpo da resposta só leva o utilizador e a validade, nunca o token.</summary>
+static AuthResponse IssueSession(HttpResponse response, UserAccount user, TokenSettings settings, bool cookieSecure)
 {
     var now = DateTimeOffset.UtcNow;
     var expires = now.AddMinutes(Math.Clamp(settings.ExpirationMinutes, 5, 1440));
@@ -251,7 +283,8 @@ static AuthResponse CreateAuthResponse(UserAccount user, TokenSettings settings)
     var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.Secret));
     var token = new JwtSecurityToken(settings.Issuer, settings.Audience, claims, now.UtcDateTime, expires.UtcDateTime,
         new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
-    return new AuthResponse(new JwtSecurityTokenHandler().WriteToken(token), expires, new UserResponse(user.Id, user.DisplayName, user.Email));
+    SessionCookie.Write(response, cookieSecure, new JwtSecurityTokenHandler().WriteToken(token), expires);
+    return new AuthResponse(expires, new UserResponse(user.Id, user.DisplayName, user.Email));
 }
 
 // Torna o Program visível ao WebApplicationFactory<Program> dos testes de integração.

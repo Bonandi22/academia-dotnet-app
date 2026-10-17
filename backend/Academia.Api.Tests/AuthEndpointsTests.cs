@@ -14,16 +14,16 @@ public sealed class AuthEndpointsTests(ApiFactory api)
     private static string NewEmail() => $"auth-{Guid.NewGuid():N}@exemplo.pt";
 
     [Fact]
-    public async Task Registo_valido_devolve_201_com_token_e_email_normalizado()
+    public async Task Registo_valido_devolve_201_com_sessao_em_cookie_e_email_normalizado()
     {
         var email = NewEmail();
         var response = await api.CreateClient().PostAsJsonAsync("/api/auth/register",
             new RegisterRequest("  Ana  ", $"  {email.ToUpperInvariant()} ", "password-de-teste-123"));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Contains(response.Headers.GetValues("Set-Cookie"), c => c.StartsWith("academia_session="));
         var auth = await response.Content.ReadFromJsonAsync<AuthResponse>();
-        Assert.False(string.IsNullOrWhiteSpace(auth!.AccessToken));
-        Assert.Equal(email, auth.User.Email);
+        Assert.Equal(email, auth!.User.Email);
         Assert.Equal("Ana", auth.User.DisplayName);
         Assert.True(auth.ExpiresAt > DateTimeOffset.UtcNow);
     }
