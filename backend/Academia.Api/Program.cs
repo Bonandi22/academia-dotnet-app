@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Academia.Api.Lab;
+using Academia.Api.Learning;
 using Academia.Application.Contracts;
 using Academia.Domain.Entities;
 using Academia.Infrastructure.Persistence;
@@ -94,61 +95,36 @@ auth.MapGet("/me", async (ClaimsPrincipal principal, AcademiaDbContext db) =>
 
 var learning = app.MapGroup("/api/learning").WithTags("Aprendizagem").RequireAuthorization();
 learning.MapGet("/snapshot", async (ClaimsPrincipal principal, AcademiaDbContext db) =>
+    Results.Ok(await LearningStore.SnapshotAsync(db, GetUserId(principal))));
+
+// Sincronização num só pedido: valida tudo primeiro e grava num único SaveChanges (uma transação: tudo ou nada).
+learning.MapPost("/sync", async (SyncRequest request, ClaimsPrincipal principal, AcademiaDbContext db, ILogger<Program> logger) =>
 {
+    if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
     var userId = GetUserId(principal);
-    var lessons = await db.LessonProgress.AsNoTracking().Where(x => x.UserId == userId)
-        .Select(x => new LessonProgressResponse(x.ModuleId, x.LessonId, x.IsCompleted, x.UpdatedAt)).ToListAsync();
-    var reviews = await db.Reviews.AsNoTracking().Where(x => x.UserId == userId).OrderByDescending(x => x.UpdatedAt)
-        .Select(x => new ReviewResponse(x.ItemKey, x.Title, x.ModuleId, x.ModuleTitle, x.Kind, x.Reason, x.IsResolved, x.CreatedAt, x.UpdatedAt)).ToListAsync();
-        
-    var quizRows = await db.QuizAttempts
-        .AsNoTracking()
-        .Where(x => x.UserId == userId)
-        .OrderByDescending(x => x.CompletedAt)
-        .Take(50)
-        .Select(x => new
-        {
-            x.ClientAttemptId,
-            x.Score,
-            x.Total,
-            x.WrongQuestionIdsJson,
-            x.CompletedAt
-        })
-        .ToListAsync();
-
-    var quizzes = quizRows
-        .Select(x => new QuizAttemptResponse(x.ClientAttemptId, x.Score, x.Total, ParseWrongQuestionIds(x.WrongQuestionIdsJson), x.CompletedAt))
-        .ToList();
-
-    var flashcards = await db.Flashcards.AsNoTracking().Where(x => x.UserId == userId)
-        .Select(x => new FlashcardResponse(x.FlashcardId, x.Rating, x.UpdatedAt)).ToListAsync();
-    return Results.Ok(new LearningSnapshotResponse(lessons, reviews, quizzes, flashcards));
+    await LearningStore.ApplyAsync(db, userId, request, DateTimeOffset.UtcNow);
+    try { await db.SaveChangesAsync(); }
+    catch (DbUpdateException ex)
+    {
+        // Só acontece com duas sincronizações da mesma conta a inserir a mesma chave em simultâneo.
+        logger.LogWarning(ex, "Sincronização concorrente rejeitada para o utilizador {UserId}.", userId);
+        return Results.Conflict(new { message = "Outra sincronização desta conta estava a decorrer. Tenta novamente." });
+    }
+    return Results.Ok(await LearningStore.SnapshotAsync(db, userId));
 });
 
 learning.MapPut("/lessons", async (LessonProgressRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
-    if (!ValidKey(request.ModuleId, 80) || !ValidKey(request.LessonId, 120)) return Results.BadRequest(new { message = "Identificador de aula inválido." });
-    var userId = GetUserId(principal);
-    var entity = await db.LessonProgress.SingleOrDefaultAsync(x => x.UserId == userId && x.ModuleId == request.ModuleId && x.LessonId == request.LessonId);
-    if (entity is null) db.LessonProgress.Add(new LessonProgress { UserId = userId, ModuleId = request.ModuleId, LessonId = request.LessonId, IsCompleted = request.IsCompleted });
-    else { entity.IsCompleted = request.IsCompleted; entity.UpdatedAt = DateTimeOffset.UtcNow; }
+    if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
+    await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Lessons: [request]), DateTimeOffset.UtcNow);
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
 
 learning.MapPut("/reviews", async (ReviewRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
-    // Limites iguais aos HasMaxLength de ReviewEntry no AcademiaDbContext.
-    if (!ValidKey(request.ItemKey, 180) || !ValidKey(request.ModuleId, 80) || (request.ModuleTitle?.Length ?? 0) > 180
-        || string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 250 || (request.Reason?.Length ?? 0) > 1000
-        || !new[] { "lesson", "quiz", "flashcard" }.Contains(request.Kind))
-        return Results.BadRequest(new { message = "Dados de revisão inválidos." });
-    var userId = GetUserId(principal);
-    var moduleTitle = request.ModuleTitle ?? "";
-    var entity = await db.Reviews.SingleOrDefaultAsync(x => x.UserId == userId && x.ItemKey == request.ItemKey);
-    if (entity is null)
-        db.Reviews.Add(new ReviewEntry { UserId = userId, ItemKey = request.ItemKey, Title = request.Title.Trim(), ModuleId = request.ModuleId, ModuleTitle = moduleTitle, Kind = request.Kind, Reason = request.Reason ?? "", IsResolved = request.IsResolved });
-    else { entity.Title = request.Title.Trim(); entity.ModuleId = request.ModuleId; entity.ModuleTitle = moduleTitle; entity.Kind = request.Kind; entity.Reason = request.Reason ?? ""; entity.IsResolved = request.IsResolved; entity.UpdatedAt = DateTimeOffset.UtcNow; }
+    if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
+    await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Reviews: [request]), DateTimeOffset.UtcNow);
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
@@ -163,38 +139,33 @@ learning.MapDelete("/reviews/{itemKey}", async (string itemKey, ClaimsPrincipal 
 
 learning.MapPost("/quiz-attempts", async (QuizAttemptRequest request, ClaimsPrincipal principal, AcademiaDbContext db, ILogger<Program> logger) =>
 {
-    if (request.Id == Guid.Empty || request.Total < 1 || request.Total > 100 || request.Score < 0 || request.Score > request.Total || request.WrongQuestionIds is null || request.WrongQuestionIds.Count > request.Total)
-        return Results.BadRequest(new { message = "Resultado de quiz inválido." });
+    if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
     var userId = GetUserId(principal);
     // Idempotente pelo id do cliente: reenviar (retry, sync repetido) devolve a tentativa já gravada.
-    var existing = await FindQuizAttemptAsync(db, userId, request.Id);
+    var existing = await LearningStore.FindQuizAttemptAsync(db, userId, request.Id);
     if (existing is not null) return Results.Ok(existing);
 
-    var now = DateTimeOffset.UtcNow;
-    var completedAt = request.CompletedAt is { } at && at <= now ? at : now;
-    var wrongIds = request.WrongQuestionIds.Distinct().Take(request.Total).ToList();
-    db.QuizAttempts.Add(new QuizAttempt { UserId = userId, ClientAttemptId = request.Id, Score = request.Score, Total = request.Total, WrongQuestionIdsJson = JsonSerializer.Serialize(wrongIds), CompletedAt = completedAt });
+    var attempt = LearningStore.NewQuizAttempt(userId, request, DateTimeOffset.UtcNow);
+    db.QuizAttempts.Add(attempt);
     try { await db.SaveChangesAsync(); }
     catch (DbUpdateException ex)
     {
         // Dois envios do mesmo id em simultâneo: o índice único (UserId, ClientAttemptId) trava o segundo.
         logger.LogInformation(ex, "Tentativa de quiz {AttemptId} já gravada por um pedido concorrente.", request.Id);
         db.ChangeTracker.Clear();
-        existing = await FindQuizAttemptAsync(db, userId, request.Id);
+        existing = await LearningStore.FindQuizAttemptAsync(db, userId, request.Id);
         if (existing is null) throw;
         return Results.Ok(existing);
     }
-    return Results.Created($"/api/learning/quiz-attempts/{request.Id}", new QuizAttemptResponse(request.Id, request.Score, request.Total, wrongIds, completedAt));
+    return Results.Created($"/api/learning/quiz-attempts/{request.Id}", await LearningStore.FindQuizAttemptAsync(db, userId, request.Id));
 });
 
 learning.MapPut("/flashcards", async (FlashcardRatingRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
-    if (!ValidKey(request.FlashcardId, 160) || !new[] { "again", "good", "easy" }.Contains(request.Rating)) return Results.BadRequest(new { message = "Avaliação de flashcard inválida." });
-    var userId = GetUserId(principal);
-    var card = await db.Flashcards.SingleOrDefaultAsync(x => x.UserId == userId && x.FlashcardId == request.FlashcardId);
-    if (card is null) db.Flashcards.Add(new FlashcardProgress { UserId = userId, FlashcardId = request.FlashcardId, Rating = request.Rating });
-    else { card.Rating = request.Rating; card.UpdatedAt = DateTimeOffset.UtcNow; }
-    await db.SaveChangesAsync(); return Results.NoContent();
+    if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
+    await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Flashcards: [request]), DateTimeOffset.UtcNow);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
 });
 
 try
@@ -213,14 +184,6 @@ if (labAtivo) await app.Services.InitializeLabAsync(app.Logger);
 app.Run();
 
 static Guid GetUserId(ClaimsPrincipal principal) => Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException());
-static List<string> ParseWrongQuestionIds(string json) => JsonSerializer.Deserialize<List<string>>(json) ?? [];
-static async Task<QuizAttemptResponse?> FindQuizAttemptAsync(AcademiaDbContext db, Guid userId, Guid clientAttemptId)
-{
-    var row = await db.QuizAttempts.AsNoTracking().Where(x => x.UserId == userId && x.ClientAttemptId == clientAttemptId)
-        .Select(x => new { x.Score, x.Total, x.WrongQuestionIdsJson, x.CompletedAt }).SingleOrDefaultAsync();
-    return row is null ? null : new QuizAttemptResponse(clientAttemptId, row.Score, row.Total, ParseWrongQuestionIds(row.WrongQuestionIdsJson), row.CompletedAt);
-}
-static bool ValidKey(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Length <= max && !value.Contains('\\');
 static bool IsValidEmail(string email) => email.Length <= 320 && System.Net.Mail.MailAddress.TryCreate(email, out var parsed) && parsed is not null && parsed.Address.Equals(email, StringComparison.OrdinalIgnoreCase);
 static AuthResponse CreateAuthResponse(UserAccount user, TokenSettings settings)
 {

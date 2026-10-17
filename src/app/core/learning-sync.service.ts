@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
@@ -15,63 +15,45 @@ interface ServerSnapshot {
 // Registo de assinaturas da versão anterior; substituído pelo id da tentativa, só falta limpá-lo.
 const LEGACY_SYNCED_ATTEMPTS_KEY = 'academia-dotnet-synced-quiz-attempts-v1';
 
+export interface SyncResult { lessons: number; reviews: number; quizzes: number; flashcards: number; replacedLocal: boolean; }
+
 @Injectable({ providedIn: 'root' })
 export class LearningSyncService {
   constructor(private readonly http: HttpClient, private readonly progress: ProgressService, private readonly auth: AuthService) {}
 
-  async sync(): Promise<{ lessons: number; reviews: number; quizzes: number; flashcards: number; replacedLocal: boolean }> {
+  /** Envia todo o progresso local num só pedido (a API aplica-o numa transação) e une a resposta ao estado local. */
+  async sync(): Promise<SyncResult> {
     const userId = this.auth.currentUser()?.id;
     // Progresso de outra conta não pode ser enviado para esta.
     const replacedLocal = userId ? this.progress.claimFor(userId) : false;
     try { localStorage.removeItem(LEGACY_SYNCED_ATTEMPTS_KEY); } catch { /* Sem storage não há nada a limpar. */ }
     const local = this.progress.exportSnapshot();
-    let lessonCount = 0, reviewCount = 0, quizCount = 0, flashcardCount = 0;
 
-    for (const deletedId of local.deletedReviewIds) {
-      try {
-        await firstValueFrom(this.http.delete<void>(`${environment.apiBaseUrl}/learning/reviews/${encodeURIComponent(deletedId)}`));
-      } catch (error) {
-        if (!(error instanceof HttpErrorResponse) || error.status !== 404) throw error;
-      }
-    }
-    if (local.deletedReviewIds.length) this.progress.clearDeletedReviewIds(local.deletedReviewIds);
-
-    const lessonUpdates = [
+    const lessons = [
       ...local.uncompletedLessons.map(key => ({ key, isCompleted: false })),
       ...local.completedLessons.map(key => ({ key, isCompleted: true }))
-    ];
-    for (const { key, isCompleted } of lessonUpdates) {
+    ].flatMap(({ key, isCompleted }) => {
       const split = key.lastIndexOf('::');
-      if (split < 1) continue;
-      await firstValueFrom(this.http.put<void>(`${environment.apiBaseUrl}/learning/lessons`, {
-        moduleId: key.slice(0, split), lessonId: key.slice(split + 2), isCompleted
-      }));
-      lessonCount++;
-    }
-    if (local.uncompletedLessons.length) this.progress.clearUncompletedLessons(local.uncompletedLessons);
+      return split < 1 ? [] : [{ moduleId: key.slice(0, split), lessonId: key.slice(split + 2), isCompleted }];
+    });
 
-    for (const item of local.reviews) {
-      await firstValueFrom(this.http.put<void>(`${environment.apiBaseUrl}/learning/reviews`, {
+    const remote = await firstValueFrom(this.http.post<ServerSnapshot>(`${environment.apiBaseUrl}/learning/sync`, {
+      deletedReviewKeys: local.deletedReviewIds,
+      lessons,
+      reviews: local.reviews.map(item => ({
         itemKey: item.id, title: item.title, moduleId: item.moduleId, moduleTitle: item.moduleTitle,
         kind: item.kind, reason: item.reason, isResolved: item.done
-      }));
-      reviewCount++;
-    }
-
-    // A API é idempotente pelo id: reenviar uma tentativa já gravada não a duplica.
-    for (const attempt of local.quizAttempts) {
-      await firstValueFrom(this.http.post(`${environment.apiBaseUrl}/learning/quiz-attempts`, {
+      })),
+      // A API é idempotente pelo id: reenviar tentativas já gravadas não as duplica.
+      quizAttempts: local.quizAttempts.map(attempt => ({
         id: attempt.id, score: attempt.score, total: attempt.total, wrongQuestionIds: attempt.wrongQuestionIds, completedAt: attempt.date
-      }));
-      quizCount++;
-    }
+      })),
+      flashcards: Object.entries(local.flashcardRatings).map(([flashcardId, rating]) => ({ flashcardId, rating }))
+    }));
 
-    for (const [flashcardId, rating] of Object.entries(local.flashcardRatings)) {
-      await firstValueFrom(this.http.put<void>(`${environment.apiBaseUrl}/learning/flashcards`, { flashcardId, rating }));
-      flashcardCount++;
-    }
-
-    const remote = await firstValueFrom(this.http.get<ServerSnapshot>(`${environment.apiBaseUrl}/learning/snapshot`));
+    // Só depois de o servidor aceitar tudo: limpa os tombstones enviados (não os criados entretanto).
+    this.progress.clearDeletedReviewIds(local.deletedReviewIds);
+    this.progress.clearUncompletedLessons(local.uncompletedLessons);
     const remoteState: ProgressSnapshot = {
       completedLessons: remote.lessons.filter(x => x.isCompleted).map(x => `${x.moduleId}::${x.lessonId}`),
       reviews: remote.reviews.map(x => ({ id: x.itemKey, title: x.title, moduleId: x.moduleId, moduleTitle: x.moduleTitle, kind: x.kind, reason: x.reason, done: x.isResolved, createdAt: x.createdAt })),
@@ -81,6 +63,11 @@ export class LearningSyncService {
       uncompletedLessons: []
     };
     this.progress.mergeSnapshot(remoteState);
-    return { lessons: lessonCount, reviews: reviewCount, quizzes: quizCount, flashcards: flashcardCount, replacedLocal };
+
+    const merged = this.progress.exportSnapshot();
+    return {
+      lessons: merged.completedLessons.length, reviews: merged.reviews.filter(item => !item.done).length,
+      quizzes: merged.quizAttempts.length, flashcards: Object.keys(merged.flashcardRatings).length, replacedLocal
+    };
   }
 }

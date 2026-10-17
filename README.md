@@ -126,6 +126,7 @@ A sincronização faz upsert de aulas concluídas, itens de revisão e avaliaç�
 | POST | `/api/auth/login` | Público | Iniciar sessão e receber JWT |
 | GET | `/api/auth/me` | JWT | Obter utilizador atual |
 | GET | `/api/learning/snapshot` | JWT | Obter snapshot de aprendizagem |
+| POST | `/api/learning/sync` | JWT | Enviar todo o progresso numa transação e receber o snapshot (usado pela app) |
 | PUT | `/api/learning/lessons` | JWT | Atualizar conclusão de aula |
 | PUT | `/api/learning/reviews` | JWT | Criar/atualizar item de revisão |
 | DELETE | `/api/learning/reviews/{itemKey}` | JWT | Remover item de revisão |

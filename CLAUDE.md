@@ -93,7 +93,7 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 
 `ProgressService` (`src/app/core/progress.service.ts`) é a fonte de verdade no cliente: estado em signals, persistido em `localStorage` sob `academia-dotnet-progress-v1`. A aplicação funciona inteiramente sem conta nem API.
 
-`LearningSyncService` só corre quando o utilizador sincroniza: faz **push** (deleções de revisão, aulas desmarcadas e concluídas, revisões, tentativas de quiz ainda não marcadas, flashcards), depois **pull** de `/api/learning/snapshot`, e termina em `ProgressService.mergeSnapshot()`, que une os dois lados. A união depende destes mecanismos, que têm de ser preservados ao mexer aqui:
+`LearningSyncService` só corre quando o utilizador sincroniza: envia **todo** o progresso local num único `POST /api/learning/sync` (deleções de revisão, aulas desmarcadas e concluídas, revisões, tentativas de quiz, flashcards), que a API valida por inteiro e grava num só `SaveChanges` — tudo ou nada — e responde com o snapshot; o cliente termina em `ProgressService.mergeSnapshot()`, que une os dois lados. Os endpoints individuais continuam para o Swagger/`.http`. A união depende destes mecanismos, que têm de ser preservados ao mexer aqui:
 
 - `deletedReviewIds` e `uncompletedLessons` — tombstones locais; sem eles o pull ressuscita revisões apagadas e aulas desmarcadas. Depois do push limpam-se só as chaves enviadas (`clearDeletedReviewIds(sent)`, `clearUncompletedLessons(sent)`), não as criadas durante a sincronização.
 - Dono do progresso local (`academia-dotnet-progress-owner-v1`) — `ProgressService.claimFor(userId)` no início do sync. Progresso anónimo é absorvido pela conta; progresso de **outra** conta é descartado para nunca ser enviado para a conta errada.
@@ -107,7 +107,7 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 
 ### API
 
-`backend/Academia.Api/Program.cs` contém toda a superfície da API principal como Minimal API num único ficheiro (auth + learning). É uma escolha deliberada de escala: as camadas `Domain`/`Application`/`Infrastructure` existem e devem continuar a ser respeitadas (entidades e DbContext não sobem para a API, contratos não descem para o Domain), mas não há serviços de aplicação a mais só por simetria.
+`backend/Academia.Api/Program.cs` contém toda a superfície da API principal como Minimal API num único ficheiro (auth + learning). A validação e a escrita do progresso vivem em `Academia.Api/Learning/LearningStore.cs`, partilhadas pelos endpoints individuais e pelo `/sync`: regra nova de validação vai para lá (com os limites iguais aos `HasMaxLength`), e as chaves de texto comparam-se sem distinguir maiúsculas, como a collation do SQL Server. É uma escolha deliberada de escala: as camadas `Domain`/`Application`/`Infrastructure` existem e devem continuar a ser respeitadas (entidades e DbContext não sobem para a API, contratos não descem para o Domain), mas não há serviços de aplicação a mais só por simetria.
 
 Todos os endpoints de `/api/learning` exigem JWT e filtram por `UserId` retirado da claim `NameIdentifier` — nunca aceitam um id de utilizador vindo do corpo do pedido. O arranque falha com exceção se `Jwt:Secret` tiver menos de 32 bytes.
 

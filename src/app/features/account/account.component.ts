@@ -4,6 +4,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../core/auth.service';
 import { LearningSyncService } from '../../core/learning-sync.service';
 
+const count = (n: number, singular: string, plural: string): string => `${n} ${n === 1 ? singular : plural}`;
+
 @Component({
   standalone: true,
   selector: 'app-account',
@@ -70,7 +72,7 @@ export class AccountComponent {
     try {
       const result = await this.syncService.sync();
       const replaced = result.replacedLocal ? 'O progresso local pertencia a outra conta e foi substituído pelo desta. ' : '';
-      this.message.set(`${replaced}Sincronização concluída. ${result.lessons} aulas, ${result.reviews} revisões, ${result.quizzes} quizzes e ${result.flashcards} flashcards enviados; o estado remoto foi combinado com o progresso local.`);
+      this.message.set(`${replaced}Sincronização concluída. Progresso guardado na conta: ${count(result.lessons, 'aula concluída', 'aulas concluídas')}, ${count(result.reviews, 'tema por rever', 'temas por rever')}, ${count(result.quizzes, 'sessão de quiz', 'sessões de quiz')} e ${count(result.flashcards, 'flashcard avaliado', 'flashcards avaliados')}.`);
     } catch (err) {
       this.error.set(this.describeError(err));
       throw err;
