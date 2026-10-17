@@ -18,7 +18,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private const string DefaultServer = "Server=localhost,3311;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False";
 
-    private readonly string connectionString = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("ACADEMIA_TEST_SQL") ?? DefaultServer)
+    private readonly string connectionString = NewTestDatabase();
+
+    /// <summary>Connection string para uma base de testes nova (ainda por criar) no SQL Server de testes.</summary>
+    public static string NewTestDatabase() => new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("ACADEMIA_TEST_SQL") ?? DefaultServer)
     {
         InitialCatalog = $"AcademiaTests_{Guid.NewGuid():N}",
         ConnectTimeout = 5

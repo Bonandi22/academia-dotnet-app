@@ -1,4 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
+import { migrateLessonKey, migrateReviewId } from './legacy-lesson-keys';
 
 export interface ReviewItem {
   id: string;
@@ -52,12 +53,12 @@ export class ProgressService {
   readonly completedLessonCount = computed(() => this.state().completedLessons.length);
   readonly pendingReviewCount = computed(() => this.pendingReviews().length);
 
-  isLessonComplete(moduleId: string, sectionIndex: number): boolean {
-    return this.state().completedLessons.includes(this.lessonKey(moduleId, sectionIndex));
+  isLessonComplete(moduleId: string, sectionId: string): boolean {
+    return this.state().completedLessons.includes(this.lessonKey(moduleId, sectionId));
   }
 
-  toggleLesson(moduleId: string, sectionIndex: number): void {
-    const key = this.lessonKey(moduleId, sectionIndex);
+  toggleLesson(moduleId: string, sectionId: string): void {
+    const key = this.lessonKey(moduleId, sectionId);
     this.update(state => {
       const wasComplete = state.completedLessons.includes(key);
       return {
@@ -192,8 +193,8 @@ export class ProgressService {
     this.save(next);
   }
 
-  private lessonKey(moduleId: string, sectionIndex: number): string {
-    return `${moduleId}::${sectionIndex}`;
+  private lessonKey(moduleId: string, sectionId: string): string {
+    return `${moduleId}::${sectionId}`;
   }
 
   private update(updater: (state: ProgressSnapshot) => ProgressSnapshot): void {
@@ -208,13 +209,15 @@ export class ProgressService {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return { ...EMPTY_STATE };
       const parsed = JSON.parse(raw) as Partial<ProgressSnapshot>;
+      // Chaves por índice (`csharp::0`, `lesson:csharp:0`) passam a id de secção; é idempotente.
+      const lessonKeys = (keys: unknown) => Array.isArray(keys) ? [...new Set(keys.map(migrateLessonKey))] : [];
       return {
-        completedLessons: Array.isArray(parsed.completedLessons) ? parsed.completedLessons : [],
-        reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
+        completedLessons: lessonKeys(parsed.completedLessons),
+        reviews: Array.isArray(parsed.reviews) ? parsed.reviews.map(item => ({ ...item, id: migrateReviewId(item.id) })) : [],
         quizAttempts: Array.isArray(parsed.quizAttempts) ? parsed.quizAttempts : [],
         flashcardRatings: parsed.flashcardRatings && typeof parsed.flashcardRatings === 'object' ? parsed.flashcardRatings : {},
-        deletedReviewIds: Array.isArray(parsed.deletedReviewIds) ? parsed.deletedReviewIds : [],
-        uncompletedLessons: Array.isArray(parsed.uncompletedLessons) ? parsed.uncompletedLessons : []
+        deletedReviewIds: Array.isArray(parsed.deletedReviewIds) ? parsed.deletedReviewIds.map(migrateReviewId) : [],
+        uncompletedLessons: lessonKeys(parsed.uncompletedLessons)
       };
     } catch {
       return { ...EMPTY_STATE };

@@ -25,16 +25,16 @@ import { ProgressService } from '../../core/progress.service';
 
       <div class="lesson-layout">
         <main class="lesson-content">
-          @for (section of current.sections; track section.title; let i = $index) {
+          @for (section of current.sections; track section.id; let i = $index) {
             <article class="lesson-section">
-              <div class="lesson-section-top"><span class="lesson-section-number">AULA {{ i + 1 }}</span><span class="lesson-status" [class.is-complete]="progress.isLessonComplete(current.moduleId, i)">{{ progress.isLessonComplete(current.moduleId, i) ? 'Concluída' : 'Por estudar' }}</span></div>
+              <div class="lesson-section-top"><span class="lesson-section-number">AULA {{ i + 1 }}</span><span class="lesson-status" [class.is-complete]="progress.isLessonComplete(current.moduleId, section.id)">{{ progress.isLessonComplete(current.moduleId, section.id) ? 'Concluída' : 'Por estudar' }}</span></div>
               <h2>{{ section.title }}</h2>
               <p>{{ section.explanation }}</p>
               @if (section.code) {
                 <div class="code-example"><div class="code-example-top"><span>Exemplo</span><button type="button" class="copy-code" (click)="copyCode(section.code, section.title)">{{ copied() === section.title ? 'Copiado' : 'Selecionar código' }}</button></div><pre><code>{{ section.code }}</code></pre></div>
               }
               @if (section.takeaway) { <div class="lesson-takeaway"><strong>Para recordar</strong><p>{{ section.takeaway }}</p></div> }
-              <div class="lesson-actions"><button type="button" class="button" [class.button-outline]="progress.isLessonComplete(current.moduleId, i)" (click)="toggleComplete(current, i)">{{ progress.isLessonComplete(current.moduleId, i) ? 'Marcar como não concluída' : 'Marcar aula como concluída' }}</button><button type="button" class="text-button" (click)="toggleReview(current, i, section.title)">{{ isReviewPending(current.moduleId, i) ? '✓ Na lista de revisão' : '+ Preciso rever esta aula' }}</button></div>
+              <div class="lesson-actions"><button type="button" class="button" [class.button-outline]="progress.isLessonComplete(current.moduleId, section.id)" (click)="toggleComplete(current, section.id)">{{ progress.isLessonComplete(current.moduleId, section.id) ? 'Marcar como não concluída' : 'Marcar aula como concluída' }}</button><button type="button" class="text-button" (click)="toggleReview(current, section.id, section.title)">{{ isReviewPending(current.moduleId, section.id) ? '✓ Na lista de revisão' : '+ Preciso rever esta aula' }}</button></div>
             </article>
           }
         </main>
@@ -70,17 +70,17 @@ export class StudyComponent {
     });
   }
 
-  toggleComplete(lesson: StudyLesson, index: number): void {
-    this.progress.toggleLesson(lesson.moduleId, index);
+  toggleComplete(lesson: StudyLesson, sectionId: string): void {
+    this.progress.toggleLesson(lesson.moduleId, sectionId);
   }
 
-  isReviewPending(moduleId: string, index: number): boolean {
-    return this.progress.pendingReviews().some(item => item.id === `lesson:${moduleId}:${index}`);
+  isReviewPending(moduleId: string, sectionId: string): boolean {
+    return this.progress.pendingReviews().some(item => item.id === `lesson:${moduleId}:${sectionId}`);
   }
 
-  toggleReview(lesson: StudyLesson, index: number, title: string): void {
-    const id = `lesson:${lesson.moduleId}:${index}`;
-    if (this.isReviewPending(lesson.moduleId, index)) {
+  toggleReview(lesson: StudyLesson, sectionId: string, title: string): void {
+    const id = `lesson:${lesson.moduleId}:${sectionId}`;
+    if (this.isReviewPending(lesson.moduleId, sectionId)) {
       this.progress.resolveReview(id);
       return;
     }

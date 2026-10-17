@@ -102,8 +102,9 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 
 ### Formato das chaves
 
-- Aula concluída: `` `${moduleId}::${sectionIndex}` ``. O cliente divide com `lastIndexOf('::')` antes de enviar `moduleId`/`lessonId` separados. Qualquer mudança neste formato tem de ser feita em `ProgressService.lessonKey` e em `LearningSyncService.sync()` ao mesmo tempo.
-- Item de revisão: prefixado por origem, p. ex. `flashcard:${id}`. Avaliar um flashcard como `again` cria a revisão; `good`/`easy` resolve-a.
+- Aula concluída: `` `${moduleId}::${section.id}` `` (ex.: `csharp::async-await`). Cada `LessonSection` tem um `id` estável, único no módulo — reordenar ou inserir secções não mexe no progresso; **mudar um `id` existente sim**. O cliente divide com `lastIndexOf('::')` antes de enviar `moduleId`/`lessonId` separados. Qualquer mudança neste formato tem de ser feita em `ProgressService.lessonKey` e em `LearningSyncService.sync()` ao mesmo tempo.
+- Item de revisão: prefixado por origem — `lesson:${moduleId}:${section.id}`, `quiz:${id}`, `flashcard:${id}`. Avaliar um flashcard como `again` cria a revisão; `good`/`easy` resolve-a.
+- Chaves antigas por índice (`csharp::0`, `lesson:csharp:0`) são convertidas uma vez: no cliente por `legacy-lesson-keys.ts` (em `ProgressService.load()`), no servidor pela migration `MigrateLessonKeysToSectionIds`. As duas tabelas estão congeladas e um teste garante que coincidem — não as derivar do conteúdo atual.
 
 ### API
 
