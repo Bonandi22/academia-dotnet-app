@@ -75,7 +75,7 @@ dotnet build .\backend\Academia.sln      # warnings de nullable reference (CS86x
 
 ### Git
 
-Repositório privado em `github.com/Bonandi22/academia-dotnet-app`, branch principal `main`, sem CI configurado. O `gh` está em `C:\tools\gh\bin\gh.exe` (fora do PATH); em Git Bash invocar como `"/c/tools/gh/bin/gh.exe"`. Não commitar nem fazer push sem pedido explícito do utilizador.
+Repositório privado em `github.com/Bonandi22/academia-dotnet-app`, branch principal `main`. CI em GitHub Actions (`.github/workflows/ci.yml`), em cada push para `main` e em PRs: frontend (`tsc`, `npm test`, build de produção, `npm audit`), backend (build Release, `dotnet test` contra um SQL Server em serviço via `ACADEMIA_TEST_SQL`, scan NuGet de vulnerabilidades) e build das imagens Docker. Ver o resultado com `gh run list` / `gh run watch`. O `gh` está em `C:\tools\gh\bin\gh.exe` (fora do PATH); em Git Bash invocar como `"/c/tools/gh/bin/gh.exe"`. Não commitar nem fazer push sem pedido explícito do utilizador.
 
 Atenção: existe um repositório git acidental com raiz em `C:\Users\elker` (toda a pasta pessoal, 1 commit, sem remote). Este projeto tem `.git` próprio e não é afetado, mas comandos git corridos a partir da home ou de outra pasta sem repo próprio vão parar lá.
 

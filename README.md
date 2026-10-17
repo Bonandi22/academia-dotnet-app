@@ -153,7 +153,7 @@ A sincronização envia todo o progresso local num único pedido (`POST /api/lea
 
 ## Próximos passos recomendados para produção
 
-1. Pipeline CI a correr `npm test`, `dotnet test` (com SQL Server em serviço) e os scans de dependências; testes unitários de componentes Angular.
+1. Testes unitários de componentes Angular e deploy automatizado a partir do CI (o CI em `.github/workflows/ci.yml` já corre tipos, testes, build, scans de dependências e build das imagens).
 2. Autenticação por cookie HttpOnly/Secure/SameSite (com proteção CSRF) em vez de token em `localStorage`, que fica exposto a XSS.
 3. Recuperação e verificação de conta, política de passwords (lista de passwords comprometidas) e registo que não revele se um email já existe (hoje devolve 409).
 4. Segredos num cofre (Key Vault, secrets do orquestrador) e arranque que falhe se a chave JWT de desenvolvimento chegar a produção.

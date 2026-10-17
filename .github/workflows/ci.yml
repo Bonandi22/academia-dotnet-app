@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (tipos, testes, build, audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # >= 22.18: o npm test importa .ts diretamente (type stripping do Node).
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tipos estritos (strictTemplates)
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Testes de smoke e de conteúdo
+        run: npm test
+      - name: Build de produção
+        run: npm run build
+      - name: Dependências com vulnerabilidades altas
+        run: npm audit --omit=dev --audit-level=high
+
+  backend:
+    name: Backend (build, testes de integração, scan NuGet)
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_PID: Developer
+          # Password descartável do contentor de CI (só existe durante o job).
+          MSSQL_SA_PASSWORD: Ci_Sql_Password_123
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Ci_Sql_Password_123 -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 20 --health-start-period 30s
+    env:
+      # Lido pela ApiFactory; cada execução cria e apaga a sua base AcademiaTests_<guid>.
+      ACADEMIA_TEST_SQL: Server=localhost,1433;User Id=sa;Password=Ci_Sql_Password_123;TrustServerCertificate=True;Encrypt=False
+      DOTNET_NOLOGO: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore backend/Academia.sln
+      - name: Build
+        run: dotnet build backend/Academia.sln --no-restore -c Release
+      - name: Testes de integração
+        run: dotnet test backend/Academia.sln --no-build -c Release --logger "console;verbosity=normal"
+      - name: Pacotes NuGet com vulnerabilidades conhecidas
+        run: |
+          dotnet list backend/Academia.sln package --vulnerable --include-transitive | tee vulnerable.txt
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then exit 1; fi
+
+  docker:
+    name: Imagens Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build das imagens do docker-compose da raiz
+        run: docker compose build
