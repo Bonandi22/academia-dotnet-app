@@ -17,8 +17,8 @@ jobs:
     name: Frontend (tipos, testes, build, audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           # >= 22.18: o npm test importa .ts diretamente (type stripping do Node).
           node-version: 22
@@ -54,8 +54,8 @@ jobs:
       ACADEMIA_TEST_SQL: Server=localhost,1433;User Id=sa;Password=Ci_Sql_Password_123;TrustServerCertificate=True;Encrypt=False
       DOTNET_NOLOGO: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - run: dotnet restore backend/Academia.sln
@@ -72,7 +72,7 @@ jobs:
     name: Imagens Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build das imagens do docker-compose da raiz
         # O compose exige JWT_SECRET (vem do .env); para só construir imagens basta um valor qualquer.
         env:
