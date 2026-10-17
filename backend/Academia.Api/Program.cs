@@ -217,3 +217,6 @@ static AuthResponse CreateAuthResponse(UserAccount user, TokenSettings settings)
         new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
     return new AuthResponse(new JwtSecurityTokenHandler().WriteToken(token), expires, new UserResponse(user.Id, user.DisplayName, user.Email));
 }
+
+// Torna o Program visível ao WebApplicationFactory<Program> dos testes de integração.
+public partial class Program;

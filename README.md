@@ -105,7 +105,7 @@ Para criar uma compilação de produção do frontend:
 npm run build
 ```
 
-Os testes de smoke estruturais podem ser executados com `npm test`. Não substituem testes unitários de componentes nem testes de integração da API.
+Os testes de smoke estruturais do frontend correm com `npm test`. Os testes de integração da API (`backend/Academia.Api.Tests`) correm com `dotnet test .\backend\Academia.sln` e precisam do SQL Server local ligado: cada execução cria e apaga a sua própria base `AcademiaTests_<guid>`.
 
 ## Como usar a sincronização
 
@@ -141,7 +141,7 @@ A sincronização faz upsert de aulas concluídas, itens de revisão e avaliaç�
 
 ## Próximos passos recomendados para produção
 
-1. Testes unitários/de integração e CI.
+1. Pipeline CI a correr `npm test` e `dotnet test` (com SQL Server em serviço) e testes unitários de componentes Angular.
 2. Migrar autenticação para cookie HttpOnly ou rever cuidadosamente o armazenamento do token.
 3. Adicionar recuperação/verificação de conta, rate limiting e política de password.
 4. Completar e rever tecnicamente cada módulo de conteúdo.

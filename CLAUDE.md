@@ -10,7 +10,7 @@ Todo o conteúdo visível ao utilizador (templates, rotas, mensagens de erro da 
 
 ## Guardrails
 
-**Qualidade** — antes de dar uma tarefa como terminada, apresentar o diff (ou resumo, se grande) e os riscos: o que pode partir, o que não foi testado. `npm test` e `dotnet build` não chegam para mudanças com comportamento em runtime — mudanças de UI confirmam-se a correr a app no browser, mudanças de endpoint confirmam-se pelo Swagger ou pelos ficheiros `.http`.
+**Qualidade** — antes de dar uma tarefa como terminada, apresentar o diff (ou resumo, se grande) e os riscos: o que pode partir, o que não foi testado. `npm test` e `dotnet build` não chegam para mudanças com comportamento em runtime — mudanças de UI confirmam-se a correr a app no browser, mudanças de endpoint confirmam-se com `dotnet test` (e pelo Swagger ou pelos ficheiros `.http` quando o teste não cobre o caso).
 
 **Segurança** — a password de SQL Server e a chave JWT em `appsettings.json`, `appsettings.Development.json` e nos dois `docker-compose.yml` são **deliberadamente locais e já versionadas**; nunca as reutilizar fora deste ambiente e nunca acrescentar segredos reais ao repositório. Configuração sensível vai por variáveis de ambiente (`$env:Jwt__Secret`, `$env:ConnectionStrings__Academia`) ou `appsettings.Local.json`/`.env`, ambos git-ignored.
 
@@ -43,7 +43,16 @@ dotnet build .\Academia.sln
 dotnet run --project .\Academia.Api\Academia.Api.csproj --launch-profile Academia.Api
 ```
 
-API em `http://localhost:5080`, Swagger em `/swagger`, health check em `/health`. Não existem testes .NET no repositório — `backend/Academia.Api/Academia.Api.http` e `Lab.http` são a forma atual de exercitar os endpoints à mão.
+API em `http://localhost:5080`, Swagger em `/swagger`, health check em `/health`. `backend/Academia.Api/Academia.Api.http` e `Lab.http` servem para exercitar os endpoints à mão.
+
+### Testes de integração (`backend/Academia.Api.Tests`)
+
+```powershell
+dotnet test .\backend\Academia.sln                                      # precisa do SQL Server na 3311
+dotnet test .\backend\Academia.sln --filter "FullyQualifiedName~LearningEndpointsTests"
+```
+
+xUnit + `WebApplicationFactory<Program>` em ambiente `Testing` (sem Lab nem Swagger). `ApiFactory` cria uma base `AcademiaTests_<guid>` por execução através das migrations e apaga-a no fim; outra instância SQL vai por `ACADEMIA_TEST_SQL`. Sem SQL Server, falham logo com "Base de testes indisponível". Endpoint novo ou regra de validação nova em `/api/learning` leva teste aqui — em especial o isolamento entre utilizadores.
 
 ### SQL Server e Docker
 
