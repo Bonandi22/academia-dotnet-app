@@ -193,11 +193,13 @@ try
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AcademiaDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    // Aplica as migrations pendentes (Academia.Infrastructure/Persistence/Migrations). Uma base criada
+    // pelo antigo EnsureCreated não tem __EFMigrationsHistory e falha aqui: é preciso recriá-la.
+    await db.Database.MigrateAsync();
 }
 catch (Exception ex)
 {
-    app.Logger.LogError(ex, "Could not initialize SQL Server database. Check the connection string and ensure SQL Server is running.");
+    app.Logger.LogError(ex, "Could not apply SQL Server migrations. Check the connection string, ensure SQL Server is running, and recreate databases created before migrations existed.");
 }
 if (labAtivo) await app.Services.InitializeLabAsync(app.Logger);
 app.Run();

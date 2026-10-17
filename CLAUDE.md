@@ -102,9 +102,15 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 
 Todos os endpoints de `/api/learning` exigem JWT e filtram por `UserId` retirado da claim `NameIdentifier` — nunca aceitam um id de utilizador vindo do corpo do pedido. O arranque falha com exceção se `Jwt:Secret` tiver menos de 32 bytes.
 
-### Sem migrations EF Core
+### Migrations EF Core
 
-O schema é criado com `EnsureCreatedAsync()` no arranque. **Alterar entidades ou `AcademiaDbContext.OnModelCreating` não atualiza uma base existente** — é preciso recriá-la (`docker compose down -v`, ou largar a base manualmente). Introduzir migrations versionadas está na lista de próximos passos do README.
+O schema de `AcademiaDbContext` é versionado em `backend/Academia.Infrastructure/Persistence/Migrations` e aplicado com `MigrateAsync()` no arranque da API. Alterar entidades ou `OnModelCreating` exige uma migration nova (o `dotnet-ef` está fixado em `.config/dotnet-tools.json`; correr `dotnet tool restore` uma vez):
+
+```powershell
+dotnet ef migrations add NomeDaMudanca --context AcademiaDbContext --project backend/Academia.Infrastructure --startup-project backend/Academia.Api --output-dir Persistence/Migrations
+```
+
+Rever o `.cs` gerado antes de commitar. Uma base criada antes das migrations (pelo antigo `EnsureCreated`) não tem `__EFMigrationsHistory` e faz falhar o arranque: largar só a base `AcademiaDotNet` e deixar a API recriá-la. O `LabDbContext` continua com `EnsureCreated` de propósito — é um laboratório descartável, fora das migrations.
 
 ### Módulo Lab
 
@@ -117,7 +123,7 @@ O schema é criado com `EnsureCreatedAsync()` no arranque. **Alterar entidades o
 - **`DateTimeOffset.UtcNow`, nunca `DateTime.Now`** — é o tipo usado em todas as entidades.
 - **Async de ponta a ponta** — nunca bloquear com `.Result`/`.Wait()`.
 - **Consultas só-leitura usam `AsNoTracking()`**; preferir `Select` para projeções quando não é precisa a entidade completa.
-- **Nunca engolir `Exception` silenciosamente** — registar via `ILogger` antes de tratar ou relançar (ver o `try/catch` do `EnsureCreatedAsync` como referência).
+- **Nunca engolir `Exception` silenciosamente** — registar via `ILogger` antes de tratar ou relançar (ver o `try/catch` do `MigrateAsync` como referência).
 - Validação de entrada acontece no endpoint e devolve `ValidationProblem`/`BadRequest` com mensagem em português; comprimentos máximos têm de coincidir com os `HasMaxLength` do `AcademiaDbContext`.
 
 ### Frontend
@@ -133,7 +139,7 @@ O schema é criado com `EnsureCreatedAsync()` no arranque. **Alterar entidades o
 - **Nunca adicionar um endpoint em `/api/learning` sem `RequireAuthorization` e sem filtrar por `GetUserId(principal)`** — o grupo já exige autorização, mas o filtro por utilizador é por query e esquecê-lo expõe dados de outras contas.
 - **Nunca aceitar um `userId` vindo do corpo ou da query**; a identidade vem sempre da claim do JWT.
 - **Nunca alterar o formato das chaves de aula/revisão** sem atualizar cliente e servidor na mesma mudança — dados já guardados em `localStorage` e em SQL ficam órfãos.
-- **Nunca alterar entidades EF assumindo que a base se atualiza sozinha** — sem migrations, é preciso recriar.
+- **Nunca alterar entidades EF sem gerar a migration correspondente** — nem editar uma migration já commitada; corrige-se com uma migration nova.
 - **Nunca acrescentar um módulo a `STUDY_MODULES` sem a lição correspondente em `STUDY_LESSONS`** — `npm test` falha e o catálogo fica com uma entrada sem guia.
 - **Nunca pôr segredos reais no repositório**, nem reutilizar as credenciais de desenvolvimento fora deste ambiente local.
 - **Nunca declarar uma tarefa concluída** sem o diff revisto pelo utilizador e sem a verificação apropriada ao tipo de mudança (ver Guardrails).

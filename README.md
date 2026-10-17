@@ -75,7 +75,7 @@ dotnet run --project .\Academia.Api\Academia.Api.csproj --launch-profile Academi
 - Swagger: `http://localhost:5080/swagger`
 - Health check: `http://localhost:5080/health`
 
-No primeiro arranque, a API tenta criar a base de dados e as tabelas através de `EnsureCreated`. É conveniente para desenvolvimento local; antes de uma utilização de produção, substitui este mecanismo por migrations EF Core versionadas e um processo de migração controlado.
+No arranque, a API aplica as migrations EF Core pendentes (`backend/Academia.Infrastructure/Persistence/Migrations`) com `MigrateAsync`. Em produção, prefere gerar um script idempotente (`dotnet ef migrations script --idempotent`) e aplicá-lo num passo de deploy controlado. Se tiveres uma base `AcademiaDotNet` criada antes das migrations existirem, apaga-a uma vez para a API a recriar.
 
 ### Configuração e segurança
 
@@ -137,11 +137,11 @@ A sincronização faz upsert de aulas concluídas, itens de revisão e avaliaç�
 - A instalação de dependências e a compilação devem ser executadas no teu ambiente com acesso ao registry npm e ao NuGet.
 - Este ambiente de preparação não tem .NET SDK disponível e a instalação npm excedeu o tempo limite; por isso, a compilação da API e do Angular não foi certificada aqui.
 - A primeira versão do conteúdo é uma base de estudo, não uma enciclopédia completa. Acrescenta e revê os exemplos técnicos antes de os usar como única fonte de preparação.
-- Ainda ficam fora do MVP: pagamentos/planos, painel administrativo editorial, recuperação de password, email transacional, migrations versionadas, observabilidade avançada e publicação cloud automatizada.
+- Ainda ficam fora do MVP: pagamentos/planos, painel administrativo editorial, recuperação de password, email transacional, observabilidade avançada e publicação cloud automatizada.
 
 ## Próximos passos recomendados para produção
 
-1. Criar migrations EF Core e testes unitários/de integração.
+1. Testes unitários/de integração e CI.
 2. Migrar autenticação para cookie HttpOnly ou rever cuidadosamente o armazenamento do token.
 3. Adicionar recuperação/verificação de conta, rate limiting e política de password.
 4. Completar e rever tecnicamente cada módulo de conteúdo.
