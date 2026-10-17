@@ -74,4 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build das imagens do docker-compose da raiz
+        # O compose exige JWT_SECRET (vem do .env); para só construir imagens basta um valor qualquer.
+        env:
+          JWT_SECRET: so-para-o-build-das-imagens-no-ci
         run: docker compose build

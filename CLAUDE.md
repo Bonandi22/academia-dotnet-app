@@ -12,7 +12,7 @@ Todo o conteúdo visível ao utilizador (templates, rotas, mensagens de erro da 
 
 **Qualidade** — antes de dar uma tarefa como terminada, apresentar o diff (ou resumo, se grande) e os riscos: o que pode partir, o que não foi testado. `npm test` e `dotnet build` não chegam para mudanças com comportamento em runtime — mudanças de UI confirmam-se a correr a app no browser, mudanças de endpoint confirmam-se com `dotnet test` (e pelo Swagger ou pelos ficheiros `.http` quando o teste não cobre o caso).
 
-**Segurança** — a password de SQL Server e a chave JWT em `appsettings.json`, `appsettings.Development.json` e nos dois `docker-compose.yml` são **deliberadamente locais e já versionadas**; nunca as reutilizar fora deste ambiente e nunca acrescentar segredos reais ao repositório. Configuração sensível vai por variáveis de ambiente (`$env:Jwt__Secret`, `$env:ConnectionStrings__Academia`) ou `appsettings.Local.json`/`.env`, ambos git-ignored.
+**Segurança** — a password de SQL Server (`appsettings*.json`, os dois `docker-compose.yml`) e a chave JWT (`appsettings*.json`) são **deliberadamente locais e já versionadas**; em `Production` a API recusa arrancar com a chave JWT versionada, por isso o compose da raiz lê `JWT_SECRET` do `.env` (ver `.env.example`); nunca as reutilizar fora deste ambiente e nunca acrescentar segredos reais ao repositório. Configuração sensível vai por variáveis de ambiente (`$env:Jwt__Secret`, `$env:ConnectionStrings__Academia`) ou `appsettings.Local.json`/`.env`, ambos git-ignored.
 
 **Custo** — no final de qualquer tarefa que use loops, subagents/forks ou várias iterações de exploração, estimar o esforço gasto (nº de agentes, builds/testes repetidos) e sugerir onde reduzir da próxima vez.
 

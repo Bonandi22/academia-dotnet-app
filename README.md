@@ -41,7 +41,12 @@ Módulo `/api/lab` com uma base separada (`AcademiaLab`) e 5 milhões de transa�
 
 Na raiz do repositório, com Docker Desktop iniciado. Esta opção executa a API dentro da rede Docker; nesse caso a API liga-se ao host `sqlserver:1433`, enquanto a porta publicada no Windows é `3311`. Não executes simultaneamente esta composição e a composição do backend, porque ambas publicam a porta 3311.
 
+Na primeira vez, cria o `.env` (git-ignored) com uma chave JWT própria — a API corre em `Production` e recusa arrancar com a chave versionada nos `appsettings*.json`:
+
 ```powershell
+Copy-Item .env.example .env
+$key = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+(Get-Content .env) -replace '^JWT_SECRET=.*', "JWT_SECRET=$key" | Set-Content .env
 docker compose up --build
 ```
 

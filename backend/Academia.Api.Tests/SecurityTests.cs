@@ -73,11 +73,48 @@ public sealed class SecurityTests(ApiFactory api)
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("Jwt:Secret", ProductionApiFactory.RandomSecret()); // senão parava antes, na chave JWT
             builder.UseSetting("Lab:Enabled", "true");
         });
 
         var error = Assert.ThrowsAny<Exception>(() => factory.Services);
 
         Assert.Contains("Lab:Enabled só é permitido em Development", error.ToString());
+    }
+
+    [Fact]
+    public void Api_recusa_arrancar_em_production_com_a_chave_jwt_versionada()
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
+
+        var error = Assert.ThrowsAny<Exception>(() => factory.Services);
+
+        Assert.Contains("não pode ser a chave versionada", error.ToString());
+    }
+}
+
+/// <summary>A API em Production com uma chave JWT própria, como no docker-compose com .env.</summary>
+public sealed class ProductionApiFactory : ApiFactory
+{
+    public static string RandomSecret() => Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseEnvironment("Production");
+        builder.UseSetting("Jwt:Secret", RandomSecret());
+    }
+}
+
+public sealed class ProductionStartupTests(ProductionApiFactory api) : IClassFixture<ProductionApiFactory>
+{
+    [Fact]
+    public async Task Api_arranca_em_production_com_chave_propria_e_emite_tokens_validos()
+    {
+        var (client, auth) = await api.CreateUserAsync();
+
+        var me = await client.GetFromJsonAsync<UserResponse>("/api/auth/me");
+
+        Assert.Equal(auth.User.Id, me!.Id);
     }
 }

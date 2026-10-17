@@ -15,12 +15,17 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 var jwt = builder.Configuration.GetSection("Jwt").Get<TokenSettings>() ?? new TokenSettings();
 if (Encoding.UTF8.GetByteCount(jwt.Secret) < 32)
     throw new InvalidOperationException("Jwt:Secret must contain at least 32 bytes. Configure a secure secret outside source control.");
+// A chave dos appsettings*.json está no repositório: quem a lê pode forjar tokens de qualquer conta.
+// Em Production tem de vir de fora (variável de ambiente, .env, cofre) e ser diferente.
+if (builder.Environment.IsProduction() && IsVersionedJwtSecret(builder.Configuration, jwt.Secret))
+    throw new InvalidOperationException("Jwt:Secret em Production não pode ser a chave versionada nos appsettings*.json. Define Jwt__Secret (ex.: JWT_SECRET no .env do docker-compose) com uma chave aleatória.");
 
 builder.Services.AddDbContext<AcademiaDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Academia")));
@@ -232,6 +237,10 @@ catch (Exception ex)
 if (labAtivo) await app.Services.InitializeLabAsync(app.Logger);
 app.Run();
 
+static bool IsVersionedJwtSecret(IConfiguration configuration, string secret) =>
+    configuration is IConfigurationRoot root && root.Providers.OfType<JsonConfigurationProvider>().Any(provider =>
+        provider.Source.Path?.StartsWith("appsettings", StringComparison.OrdinalIgnoreCase) == true
+        && provider.TryGet("Jwt:Secret", out var versioned) && versioned == secret);
 static Guid GetUserId(ClaimsPrincipal principal) => Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException());
 static bool IsValidEmail(string email) => email.Length <= 320 && System.Net.Mail.MailAddress.TryCreate(email, out var parsed) && parsed is not null && parsed.Address.Equals(email, StringComparison.OrdinalIgnoreCase);
 static AuthResponse CreateAuthResponse(UserAccount user, TokenSettings settings)

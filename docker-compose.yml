@@ -27,7 +27,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Academia: "Server=sqlserver,1433;Database=AcademiaDotNet;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False"
-      Jwt__Secret: "LOCAL_DEVELOPMENT_SECRET_CHANGE_TO_32_CHARS_MINIMUM_2026"
+      # Em Production a API recusa a chave versionada nos appsettings: vem do .env (ver .env.example).
+      Jwt__Secret: ${JWT_SECRET:?Define JWT_SECRET no ficheiro .env da raiz - ver .env.example}
       Jwt__Issuer: AcademiaDotNet
       Jwt__Audience: AcademiaDotNet.Client
       ReverseProxy__TrustForwardedHeaders: "true"
