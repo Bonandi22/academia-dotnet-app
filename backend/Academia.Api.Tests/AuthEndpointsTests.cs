@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Academia.Application.Contracts;
+using Academia.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Academia.Api.Tests;
 
@@ -61,6 +64,23 @@ public sealed class AuthEndpointsTests(ApiFactory api)
 
         Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
         Assert.Equal(HttpStatusCode.OK, right.StatusCode);
+    }
+
+    [Fact]
+    public async Task Token_de_conta_que_ja_nao_existe_devolve_401_em_vez_de_falhar_na_escrita()
+    {
+        var (client, auth) = await api.CreateUserAsync();
+        using (var scope = api.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AcademiaDbContext>();
+            await db.Users.Where(u => u.Id == auth.User.Id).ExecuteDeleteAsync();
+        }
+
+        var sync = await client.PostAsJsonAsync("/api/learning/sync", new SyncRequest(Lessons: [new("csharp", "async-await", true)]));
+        var me = await client.GetAsync("/api/auth/me");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, sync.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
     }
 
     [Fact]

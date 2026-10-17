@@ -4,6 +4,8 @@ using Academia.Application.Contracts;
 using Academia.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +16,7 @@ namespace Academia.Api.Tests;
 /// Sobe a API em memória contra o SQL Server local (porta 3311), numa base AcademiaTests_&lt;guid&gt;
 /// criada pelas migrations no arranque e apagada no fim. Outra instância: variável ACADEMIA_TEST_SQL.
 /// </summary>
-public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private const string DefaultServer = "Server=localhost,3311;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False";
 
@@ -27,11 +29,18 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         ConnectTimeout = 5
     }.ConnectionString;
 
+    /// <summary>Os testes criam dezenas de contas a partir do mesmo "IP"; só os testes de rate limiting baixam isto.</summary>
+    protected virtual int AuthPermitLimit => 100_000;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Fora de Development: sem Lab nem Swagger, e só o appsettings.json versionado.
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Academia", connectionString);
+        builder.UseSetting("RateLimiting:AuthPermitLimit", AuthPermitLimit.ToString());
+        builder.UseSetting("RateLimiting:LearningPermitLimit", "100000");
+        // Como em Development: pedidos ilegíveis lançam BadHttpRequestException, para testar o handler que os trata.
+        builder.ConfigureTestServices(services => services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true));
     }
 
     public async Task InitializeAsync()

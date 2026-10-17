@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Academia.Api.Lab;
 using Academia.Api.Learning;
 using Academia.Application.Contracts;
@@ -10,7 +11,9 @@ using Academia.Infrastructure.Persistence;
 using Academia.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -36,24 +39,70 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Secret)),
         ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30)
     };
+    options.Events = new JwtBearerEvents
+    {
+        // Um token bem assinado de uma conta que já não existe (apagada, ou outra base com a mesma chave) é uma
+        // sessão inválida: 401 aqui, em vez de a escrita rebentar mais à frente na chave estrangeira.
+        OnTokenValidated = async context =>
+        {
+            var db = context.HttpContext.RequestServices.GetRequiredService<AcademiaDbContext>();
+            var exists = Guid.TryParse(context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)
+                && await db.Users.AsNoTracking().AnyAsync(u => u.Id == userId, context.HttpContext.RequestAborted);
+            if (!exists) context.Fail("A conta deste token não existe.");
+        }
+    };
 });
 builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<BadRequestExceptionHandler>();
 builder.Services.AddHealthChecks().AddDbContextCheck<AcademiaDbContext>();
 
-// Laboratório de volume (só em Development; ver backend/lab/LAB.md).
+// Atrás de um proxy (nginx no docker-compose da raiz), o IP do cliente vem em X-Forwarded-For. Só se confia no header
+// quando a API não está exposta diretamente; senão qualquer cliente o forjava para fugir ao rate limiting por IP.
+var trustForwardedHeaders = builder.Configuration.GetValue<bool>("ReverseProxy:TrustForwardedHeaders");
+if (trustForwardedHeaders)
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownNetworks.Clear(); // o IP do nginx na rede do Docker não é fixo
+        options.KnownProxies.Clear();
+    });
+
+// Rate limiting: por IP nas rotas anónimas de auth (força bruta, registo em massa), por conta em /api/learning.
+// Os limites vêm de configuração para os testes os poderem ajustar.
+var authPermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPermitLimit", 10);
+var learningPermitLimit = builder.Configuration.GetValue("RateLimiting:LearningPermitLimit", 120);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, ct) => new ValueTask(context.HttpContext.Response.WriteAsJsonAsync(
+        new { message = "Demasiados pedidos. Espera um minuto e tenta novamente." }, ct));
+    options.AddPolicy("auth", http => RateLimitPartition.GetFixedWindowLimiter(
+        http.Connection.RemoteIpAddress?.ToString() ?? "sem-ip",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = authPermitLimit, Window = TimeSpan.FromMinutes(1) }));
+    options.AddPolicy("learning", http => RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "sem-ip",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = learningPermitLimit, Window = TimeSpan.FromMinutes(1) }));
+});
+
+// Laboratório de volume (ver backend/lab/LAB.md). Os endpoints são anónimos e destrutivos (apagam índices,
+// geram milhões de linhas): nunca podem ficar ligados fora de Development, mesmo por engano de configuração.
 var labAtivo = builder.Configuration.LabAtivo();
+if (labAtivo && !builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("Lab:Enabled só é permitido em Development: o Lab expõe endpoints anónimos e destrutivos.");
 if (labAtivo) builder.Services.AddLab(builder.Configuration);
 
 var app = builder.Build();
+if (trustForwardedHeaders) app.UseForwardedHeaders();
 app.UseExceptionHandler();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
-if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
+else { app.UseHsts(); app.UseHttpsRedirection(); }
 app.UseCors("frontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter(); // depois da autenticação, para a política "learning" particionar por conta
 app.MapHealthChecks("/health");
 if (labAtivo) app.MapLabEndpoints();
 app.MapGet("/api", () => Results.Ok(new { name = "Academia .NET API", version = "1.0.0" }));
@@ -75,7 +124,7 @@ auth.MapPost("/register", async (RegisterRequest request, AcademiaDbContext db, 
     db.Users.Add(user);
     await db.SaveChangesAsync();
     return Results.Created("/api/auth/me", CreateAuthResponse(user, settings));
-}).AllowAnonymous();
+}).AllowAnonymous().RequireRateLimiting("auth");
 
 auth.MapPost("/login", async (LoginRequest request, AcademiaDbContext db, IPasswordHasher<UserAccount> hasher, TokenSettings settings) =>
 {
@@ -84,7 +133,7 @@ auth.MapPost("/login", async (LoginRequest request, AcademiaDbContext db, IPassw
     if (user is null || hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password ?? "") == PasswordVerificationResult.Failed)
         return Results.Unauthorized();
     return Results.Ok(CreateAuthResponse(user, settings));
-}).AllowAnonymous();
+}).AllowAnonymous().RequireRateLimiting("auth");
 
 auth.MapGet("/me", async (ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
@@ -93,7 +142,7 @@ auth.MapGet("/me", async (ClaimsPrincipal principal, AcademiaDbContext db) =>
     return user is null ? Results.NotFound() : Results.Ok(new UserResponse(user.Id, user.DisplayName, user.Email));
 }).RequireAuthorization();
 
-var learning = app.MapGroup("/api/learning").WithTags("Aprendizagem").RequireAuthorization();
+var learning = app.MapGroup("/api/learning").WithTags("Aprendizagem").RequireAuthorization().RequireRateLimiting("learning");
 learning.MapGet("/snapshot", async (ClaimsPrincipal principal, AcademiaDbContext db) =>
     Results.Ok(await LearningStore.SnapshotAsync(db, GetUserId(principal))));
 
@@ -102,7 +151,7 @@ learning.MapPost("/sync", async (SyncRequest request, ClaimsPrincipal principal,
 {
     if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
     var userId = GetUserId(principal);
-    await LearningStore.ApplyAsync(db, userId, request, DateTimeOffset.UtcNow);
+    if (await LearningStore.ApplyAsync(db, userId, request, DateTimeOffset.UtcNow) is { } rejected) return Results.BadRequest(new { message = rejected });
     try { await db.SaveChangesAsync(); }
     catch (DbUpdateException ex)
     {
@@ -116,7 +165,7 @@ learning.MapPost("/sync", async (SyncRequest request, ClaimsPrincipal principal,
 learning.MapPut("/lessons", async (LessonProgressRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
     if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
-    await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Lessons: [request]), DateTimeOffset.UtcNow);
+    if (await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Lessons: [request]), DateTimeOffset.UtcNow) is { } rejected) return Results.BadRequest(new { message = rejected });
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
@@ -124,7 +173,7 @@ learning.MapPut("/lessons", async (LessonProgressRequest request, ClaimsPrincipa
 learning.MapPut("/reviews", async (ReviewRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
     if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
-    await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Reviews: [request]), DateTimeOffset.UtcNow);
+    if (await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Reviews: [request]), DateTimeOffset.UtcNow) is { } rejected) return Results.BadRequest(new { message = rejected });
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
@@ -163,7 +212,7 @@ learning.MapPost("/quiz-attempts", async (QuizAttemptRequest request, ClaimsPrin
 learning.MapPut("/flashcards", async (FlashcardRatingRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
     if (LearningStore.Validate(request) is { } error) return Results.BadRequest(new { message = error });
-    await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Flashcards: [request]), DateTimeOffset.UtcNow);
+    if (await LearningStore.ApplyAsync(db, GetUserId(principal), new SyncRequest(Flashcards: [request]), DateTimeOffset.UtcNow) is { } rejected) return Results.BadRequest(new { message = rejected });
     await db.SaveChangesAsync();
     return Results.NoContent();
 });

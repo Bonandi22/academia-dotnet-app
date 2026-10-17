@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../core/auth.service';
 import { LearningSyncService } from '../../core/learning-sync.service';
+import { environment } from '../../../environments/environment';
 
 const count = (n: number, singular: string, plural: string): string => `${n} ${n === 1 ? singular : plural}`;
 
@@ -16,7 +17,7 @@ const count = (n: number, singular: string, plural: string): string => `${n} ${n
       <section class="account-card">
         <div class="account-avatar">{{ user.displayName.slice(0, 1).toUpperCase() }}</div>
         <span class="eyebrow">Sessão iniciada</span><h2>{{ user.displayName }}</h2><p>{{ user.email }}</p>
-        <div class="account-actions"><button class="button" type="button" (click)="sync()" [disabled]="busy()">{{ busy() ? 'A sincronizar…' : 'Sincronizar progresso agora' }}</button><button class="button button-outline" type="button" (click)="logout()">Terminar sessão</button></div>
+        <div class="account-actions"><button class="button" type="button" (click)="syncNow()" [disabled]="busy()">{{ busy() ? 'A sincronizar…' : 'Sincronizar progresso agora' }}</button><button class="button button-outline" type="button" (click)="logout()">Terminar sessão</button></div>
         @if (message()) { <div class="notice notice-success" role="status">{{ message() }}</div> }
         @if (error()) { <div class="notice notice-error" role="alert">{{ error() }}</div> }
       </section>
@@ -33,12 +34,13 @@ const count = (n: number, singular: string, plural: string): string => `${n} ${n
           <button class="button button-primary account-submit" type="submit" [disabled]="accountForm.invalid || busy()">{{ busy() ? 'A processar…' : mode() === 'login' ? 'Iniciar sessão' : 'Criar conta e sincronizar' }}</button>
         </form>
         @if (error()) { <div class="notice notice-error" role="alert">{{ error() }}</div> }
-        <p class="form-hint">A API deve estar em execução em <code>http://localhost:5080</code>. Sem backend, podes continuar a estudar com os dados locais.</p>
+        <p class="form-hint">A API deve estar em execução em <code>{{ apiBaseUrl }}</code>. Sem backend, podes continuar a estudar com os dados locais.</p>
       </section>
     }
   `
 })
 export class AccountComponent {
+  readonly apiBaseUrl = environment.apiBaseUrl;
   readonly mode = signal<'login'|'register'>('login');
   readonly busy = signal(false);
   readonly message = signal('');
@@ -67,6 +69,11 @@ export class AccountComponent {
     });
   }
 
+  /** Botão "Sincronizar": a falha já fica em error(); sem este catch seria uma rejeição não tratada na consola. */
+  syncNow(): void {
+    void this.sync().catch(() => undefined);
+  }
+
   async sync(): Promise<void> {
     this.error.set(''); this.message.set(''); this.busy.set(true);
     try {
@@ -86,7 +93,7 @@ export class AccountComponent {
       if (error.status === 0) return 'Não foi possível contactar a API. Confirma se o backend e o SQL Server estão em execução.';
       // 401 no login é credencial errada; noutro pedido (ex.: sincronização) a sessão expirou e o interceptor já a terminou.
       if (error.status === 401) return error.url?.includes('/auth/login') ? 'Email ou palavra-passe incorretos.' : 'A tua sessão expirou. Inicia sessão novamente para sincronizar o progresso.';
-      if (error.status === 409) return 'Já existe uma conta com este email. Inicia sessão.';
+      if (error.status === 409 && error.url?.includes('/auth/register')) return 'Já existe uma conta com este email. Inicia sessão.';
       if (error.error?.message) return String(error.error.message);
       // ValidationProblem: { errors: { campo: [mensagens] } }
       const fieldErrors = error.error?.errors as Record<string, string[]> | undefined;

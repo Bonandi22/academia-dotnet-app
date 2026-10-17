@@ -45,7 +45,7 @@ Na raiz do repositório, com Docker Desktop iniciado. Esta opção executa a API
 docker compose up --build
 ```
 
-Depois abre `http://localhost:4200`. A API fica em `http://localhost:5080` e o Swagger em `http://localhost:5080/swagger`. O primeiro build precisa de acesso à internet para obter imagens e pacotes. Esta composição é para desenvolvimento local; não publiques as passwords e a chave JWT incluídas.
+Depois abre `http://localhost:4200`. Esta composição simula produção: o frontend é o build de produção servido por nginx, que também encaminha `/api` para a API (mesma origem, sem CORS); a API corre em `Production`, sem Swagger nem Lab, e **não publica porta própria** — usa `http://localhost:4200/api/...` (ex.: `http://localhost:4200/api/auth/login`). Para Swagger e Lab, corre a API fora do Docker (secção seguinte). O primeiro build precisa de acesso à internet para obter imagens e pacotes. Não publiques as passwords e a chave JWT incluídas.
 
 Para parar os serviços, usa `Ctrl+C` e depois `docker compose down`. Para apagar também os dados SQL locais, usa `docker compose down -v` (esta operação elimina os dados da base de dados).
 
@@ -86,7 +86,19 @@ $env:Jwt__Secret = "COLOCA_AQUI_UMA_CHAVE_ALEATORIA_COM_PELO_MENOS_32_BYTES"
 $env:ConnectionStrings__Academia = "Server=...;Database=AcademiaDotNet;..."
 ```
 
-A API valida tokens JWT, usa hashing de passwords via ASP.NET Core Identity PasswordHasher, aplica limites básicos de validação e separa os dados por `UserId`. O token do cliente é mantido em `localStorage` nesta versão MVP; para produção, considera autenticação por cookie HttpOnly/Secure/SameSite, proteção contra CSRF conforme o desenho escolhido, limitação de tentativas de login, recuperação de password, verificação de email, rate limiting, logs sem dados sensíveis e gestão segura de segredos.
+O que já está aplicado (e coberto por testes de integração onde se aplica):
+
+- JWT validado no servidor; todos os dados de `/api/learning` são filtrados pelo `UserId` da claim, nunca do pedido.
+- Passwords com hash PBKDF2 (ASP.NET Core Identity `PasswordHasher`).
+- Validação de todos os inputs com limites iguais aos do schema; DTOs explícitos (sem mass assignment); acesso a dados só por LINQ/EF (queries parametrizadas).
+- Rate limiting: 10 pedidos/minuto por IP em `/api/auth/login` e `/register`, 120/minuto por conta em `/api/learning` (`RateLimiting:*`). Atrás do nginx usa o `X-Forwarded-For`, só porque a API não está exposta diretamente (`ReverseProxy:TrustForwardedHeaders`).
+- Limites de volume: listas do `/sync` (500 itens, 100 tentativas de quiz) e 300 itens de revisão por conta; snapshot com as últimas 50 tentativas.
+- Pedidos ilegíveis (JSON malformado) devolvem 400 com ProblemDetails, nunca 500 nem stack trace.
+- Fora de Development: HSTS e redirecionamento HTTPS; sem Swagger; o Lab (endpoints anónimos e destrutivos) recusa-se a arrancar.
+- nginx com CSP (`script-src 'self'`), `X-Frame-Options`, `nosniff` e `Referrer-Policy`.
+- Dependências sem vulnerabilidades conhecidas (`npm audit`, `dotnet list package --vulnerable --include-transitive`).
+
+O token do cliente é mantido em `localStorage` nesta versão; ver os próximos passos.
 
 ## Executar o Angular
 
@@ -97,7 +109,7 @@ npm install
 npm start
 ```
 
-Abre `http://localhost:4200`. A configuração da API está em `src/environments/environment.ts` (`apiBaseUrl`). Se usares outra porta, atualiza esse valor e a lista `AllowedOrigins` da API.
+Abre `http://localhost:4200`. Em desenvolvimento, a API vem de `src/environments/environment.ts` (`apiBaseUrl`); se usares outra porta, atualiza esse valor e a lista `AllowedOrigins` da API. O build de produção usa `environment.prod.ts` (`/api`, servido pelo nginx na mesma origem).
 
 Para criar uma compilação de produção do frontend:
 
@@ -115,7 +127,7 @@ Os testes de smoke estruturais do frontend correm com `npm test`. Os testes de i
 4. Também podes clicar em **Sincronizar progresso agora**.
 5. O conteúdo continua disponível localmente sem conta. A sincronização exige API e SQL Server ativos.
 
-A sincronização faz upsert de aulas concluídas, itens de revisão e avaliações de flashcards e envia resultados de quiz ainda não marcados como sincronizados. Os dados locais e remotos são combinados; ao testar em vários dispositivos, confirma os resultados. A resolução de conflitos é simples e não substitui ainda uma estratégia de sincronização distribuída mais sofisticada.
+A sincronização envia todo o progresso local num único pedido (`POST /api/learning/sync`), que a API aplica numa transação — tudo ou nada — antes de devolver o estado da conta; o cliente une-o ao progresso local. As tentativas de quiz têm um id gerado no cliente, por isso reenviar nunca as duplica. Entre dispositivos, ganha o último a sincronizar: ainda não há resolução de conflitos por timestamp de item.
 
 ## Endpoints principais
 
@@ -135,15 +147,16 @@ A sincronização faz upsert de aulas concluídas, itens de revisão e avaliaç�
 
 ## Validação e estado
 
-- A instalação de dependências e a compilação devem ser executadas no teu ambiente com acesso ao registry npm e ao NuGet.
-- Este ambiente de preparação não tem .NET SDK disponível e a instalação npm excedeu o tempo limite; por isso, a compilação da API e do Angular não foi certificada aqui.
+- A instalação de dependências e a compilação precisam de acesso ao registry npm e ao NuGet.
 - A primeira versão do conteúdo é uma base de estudo, não uma enciclopédia completa. Acrescenta e revê os exemplos técnicos antes de os usar como única fonte de preparação.
 - Ainda ficam fora do MVP: pagamentos/planos, painel administrativo editorial, recuperação de password, email transacional, observabilidade avançada e publicação cloud automatizada.
 
 ## Próximos passos recomendados para produção
 
-1. Pipeline CI a correr `npm test` e `dotnet test` (com SQL Server em serviço) e testes unitários de componentes Angular.
-2. Migrar autenticação para cookie HttpOnly ou rever cuidadosamente o armazenamento do token.
-3. Adicionar recuperação/verificação de conta, rate limiting e política de password.
-4. Completar e rever tecnicamente cada módulo de conteúdo.
-5. Adicionar pipeline CI, análise de dependências e deploy separado para frontend/API/SQL Server gerido.
+1. Pipeline CI a correr `npm test`, `dotnet test` (com SQL Server em serviço) e os scans de dependências; testes unitários de componentes Angular.
+2. Autenticação por cookie HttpOnly/Secure/SameSite (com proteção CSRF) em vez de token em `localStorage`, que fica exposto a XSS.
+3. Recuperação e verificação de conta, política de passwords (lista de passwords comprometidas) e registo que não revele se um email já existe (hoje devolve 409).
+4. Segredos num cofre (Key Vault, secrets do orquestrador) e arranque que falhe se a chave JWT de desenvolvimento chegar a produção.
+5. Utilizador SQL só com as permissões da aplicação em vez de `sa`, ligação encriptada (`Encrypt=True`) e backups automáticos com restauro testado.
+6. Resolução de conflitos entre dispositivos por timestamp de item, em vez de "ganha o último a sincronizar".
+7. Completar e rever tecnicamente cada módulo de conteúdo.

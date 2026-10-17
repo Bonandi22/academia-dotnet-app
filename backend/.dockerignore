@@ -1,0 +1,7 @@
+# O Dockerfile faz restore no contentor e depois COPY . . — bin/obj do Windows por cima partiam o
+# project.assets.json (caminhos de pacotes C:\...) e o publish falhava com NETSDK1064.
+**/bin/
+**/obj/
+**/*.user
+.vs/
+.idea/

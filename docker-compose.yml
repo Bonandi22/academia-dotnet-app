@@ -20,18 +20,17 @@ services:
     build:
       context: ./backend
       dockerfile: Academia.Api/Dockerfile
+    # Stack "tipo produção": sem Swagger nem Lab (o Lab recusa-se a arrancar fora de Development).
+    # A API não publica porta: só é alcançável através do nginx em http://localhost:4200/api, e por isso
+    # pode confiar no X-Forwarded-For que o nginx envia (rate limiting por IP do cliente real).
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Academia: "Server=sqlserver,1433;Database=AcademiaDotNet;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False"
-      ConnectionStrings__Lab: "Server=sqlserver,1433;Database=AcademiaLab;User Id=sa;Password=Change_this_password_123!;TrustServerCertificate=True;Encrypt=False"
       Jwt__Secret: "LOCAL_DEVELOPMENT_SECRET_CHANGE_TO_32_CHARS_MINIMUM_2026"
       Jwt__Issuer: AcademiaDotNet
       Jwt__Audience: AcademiaDotNet.Client
-      AllowedOrigins__0: http://localhost:4200
-      AllowedOrigins__1: http://localhost:8080
-    ports:
-      - "5080:8080"
+      ReverseProxy__TrustForwardedHeaders: "true"
     depends_on:
       sqlserver:
         condition: service_healthy

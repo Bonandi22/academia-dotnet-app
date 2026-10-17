@@ -58,7 +58,7 @@ xUnit + `WebApplicationFactory<Program>` em ambiente `Testing` (sem Lab nem Swag
 
 ```powershell
 docker compose -f .\backend\docker-compose.yml up -d sqlserver   # só a BD, API no Rider
-docker compose up --build                                        # stack completa (raiz)
+docker compose up --build                                        # stack completa (raiz), em Production: app e API só via http://localhost:4200 (/api pelo nginx)
 docker compose down -v                                           # apaga os dados SQL locais
 ```
 
@@ -111,6 +111,8 @@ Monólito modular num só repositório: frontend Angular na raiz (`src/`), API A
 
 Todos os endpoints de `/api/learning` exigem JWT e filtram por `UserId` retirado da claim `NameIdentifier` — nunca aceitam um id de utilizador vindo do corpo do pedido. O arranque falha com exceção se `Jwt:Secret` tiver menos de 32 bytes.
 
+Rate limiting (`AddRateLimiter`): política `auth` por IP em login/registo e `learning` por conta no grupo `/api/learning`, com limites em `RateLimiting:*` (os testes sobem-nos; `StrictRateLimitFactory` testa o 429). Endpoint anónimo novo leva `RequireRateLimiting("auth")`. O IP só vem do `X-Forwarded-For` com `ReverseProxy:TrustForwardedHeaders=true`, ligado apenas no compose da raiz, onde a API não publica porta — não ligar isto com a API exposta diretamente.
+
 ### Migrations EF Core
 
 O schema de `AcademiaDbContext` é versionado em `backend/Academia.Infrastructure/Persistence/Migrations` e aplicado com `MigrateAsync()` no arranque da API. Alterar entidades ou `OnModelCreating` exige uma migration nova (o `dotnet-ef` está fixado em `.config/dotnet-tools.json`; correr `dotnet tool restore` uma vez):
@@ -123,7 +125,7 @@ Rever o `.cs` gerado antes de commitar. Uma base criada antes das migrations (pe
 
 ### Módulo Lab
 
-`/api/lab/*` é um laboratório de volume (5M de transações) com `LabDbContext` próprio sobre a base **separada** `AcademiaLab`, mais um `OutboxPublisher` como `BackgroundService`. É registado apenas quando `Lab:Enabled = true` (definido em `appsettings.Development.json`); fora disso nada é injetado nem mapeado. Roteiro em `backend/lab/LAB.md`, pedidos prontos em `backend/Academia.Api/Lab.http`, scripts em `backend/lab/sql/`. Não misturar entidades do Lab com `AcademiaDbContext`.
+`/api/lab/*` é um laboratório de volume (5M de transações) com `LabDbContext` próprio sobre a base **separada** `AcademiaLab`, mais um `OutboxPublisher` como `BackgroundService`. É registado apenas quando `Lab:Enabled = true` (definido em `appsettings.Development.json`); fora disso nada é injetado nem mapeado. Os endpoints são anónimos e destrutivos, por isso **a API recusa arrancar com `Lab:Enabled` fora de Development** (testado em `SecurityTests`). Roteiro em `backend/lab/LAB.md`, pedidos prontos em `backend/Academia.Api/Lab.http`, scripts em `backend/lab/sql/`. Não misturar entidades do Lab com `AcademiaDbContext`.
 
 ## Convenções de código
 

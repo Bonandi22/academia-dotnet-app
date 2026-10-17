@@ -1,0 +1,14 @@
+# Contexto do Dockerfile do frontend: o npm install corre no contentor (Linux); copiar o node_modules do
+# Windows por cima trocaria binários nativos (esbuild). O backend tem imagem e contexto próprios.
+node_modules/
+dist/
+.angular/
+coverage/
+backend/
+.git/
+.idea/
+.vscode/
+**/bin/
+**/obj/
+.env
+.env.*
