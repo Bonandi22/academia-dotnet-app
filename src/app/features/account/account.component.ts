@@ -21,6 +21,7 @@ import { LearningSyncService } from '../../core/learning-sync.service';
       <section class="account-note"><h2>O que é sincronizado?</h2><p>Aulas concluídas, lista de revisão, resultados de quizzes e avaliações de flashcards. O conteúdo de estudo continua disponível mesmo sem iniciar sessão.</p></section>
     } @else {
       <section class="account-card account-form-card">
+        @if (auth.sessionExpired() && !error()) { <div class="notice notice-error" role="status">A tua sessão expirou. Inicia sessão novamente para sincronizar o progresso.</div> }
         <div class="account-tabs"><button type="button" class="filter-chip" [class.active]="mode() === 'login'" (click)="setMode('login')">Iniciar sessão</button><button type="button" class="filter-chip" [class.active]="mode() === 'register'" (click)="setMode('register')">Criar conta</button></div>
         <form (ngSubmit)="submit()" #accountForm="ngForm">
           @if (mode() === 'register') { <label for="displayName">Nome</label><input id="displayName" name="displayName" [(ngModel)]="displayName" required minlength="2" maxlength="100" autocomplete="name" /> }
@@ -44,7 +45,9 @@ export class AccountComponent {
   email = '';
   password = '';
 
-  constructor(readonly auth: AuthService, private readonly syncService: LearningSyncService) {}
+  constructor(readonly auth: AuthService, private readonly syncService: LearningSyncService) {
+    auth.checkExpiry();
+  }
 
   setMode(mode: 'login'|'register'): void { this.mode.set(mode); this.error.set(''); this.message.set(''); }
 
@@ -78,9 +81,16 @@ export class AccountComponent {
   private describeError(error: unknown): string {
     if (error instanceof HttpErrorResponse) {
       if (error.status === 0) return 'Não foi possível contactar a API. Confirma se o backend e o SQL Server estão em execução.';
-      if (error.status === 401) return 'Email ou palavra-passe incorretos.';
+      // 401 no login é credencial errada; noutro pedido (ex.: sincronização) a sessão expirou e o interceptor já a terminou.
+      if (error.status === 401) return error.url?.includes('/auth/login') ? 'Email ou palavra-passe incorretos.' : 'A tua sessão expirou. Inicia sessão novamente para sincronizar o progresso.';
       if (error.status === 409) return 'Já existe uma conta com este email. Inicia sessão.';
       if (error.error?.message) return String(error.error.message);
+      // ValidationProblem: { errors: { campo: [mensagens] } }
+      const fieldErrors = error.error?.errors as Record<string, string[]> | undefined;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const messages = Object.values(fieldErrors).flat().filter(Boolean);
+        if (messages.length) return messages.join(' ');
+      }
       return `O pedido falhou (HTTP ${error.status}). Verifica os dados e tenta novamente.`;
     }
     return 'Ocorreu um erro inesperado. Tenta novamente.';

@@ -62,15 +62,15 @@ auth.MapPost("/register", async (RegisterRequest request, AcademiaDbContext db, 
 {
     var name = request.DisplayName?.Trim() ?? "";
     var email = request.Email?.Trim().ToLowerInvariant() ?? "";
-    if (name.Length is < 2 or > 100 || !IsValidEmail(email) || request.Password is null || request.Password.Length < 10 || request.Password.Length > 128)
-        return Results.ValidationProblem(new Dictionary<string, string[]> {
-            ["displayName"] = ["O nome deve ter entre 2 e 100 caracteres."],
-            ["email"] = ["Indica um email válido."],
-            ["password"] = ["A palavra-passe deve ter entre 10 e 128 caracteres."]
-        });
+    var password = request.Password ?? "";
+    var errors = new Dictionary<string, string[]>();
+    if (name.Length is < 2 or > 100) errors["displayName"] = ["O nome deve ter entre 2 e 100 caracteres."];
+    if (!IsValidEmail(email)) errors["email"] = ["Indica um email válido."];
+    if (password.Length is < 10 or > 128) errors["password"] = ["A palavra-passe deve ter entre 10 e 128 caracteres."];
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
     if (await db.Users.AnyAsync(u => u.Email == email)) return Results.Conflict(new { message = "Já existe uma conta com este email." });
     var user = new UserAccount { Email = email, DisplayName = name };
-    user.PasswordHash = hasher.HashPassword(user, request.Password);
+    user.PasswordHash = hasher.HashPassword(user, password);
     db.Users.Add(user);
     await db.SaveChangesAsync();
     return Results.Created("/api/auth/me", CreateAuthResponse(user, settings));
@@ -147,13 +147,17 @@ learning.MapPut("/lessons", async (LessonProgressRequest request, ClaimsPrincipa
 
 learning.MapPut("/reviews", async (ReviewRequest request, ClaimsPrincipal principal, AcademiaDbContext db) =>
 {
-    if (!ValidKey(request.ItemKey, 180) || string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 250 || (request.Reason?.Length ?? 0) > 1000 || !new[] { "lesson", "quiz", "flashcard" }.Contains(request.Kind))
+    // Limites iguais aos HasMaxLength de ReviewEntry no AcademiaDbContext.
+    if (!ValidKey(request.ItemKey, 180) || !ValidKey(request.ModuleId, 80) || (request.ModuleTitle?.Length ?? 0) > 180
+        || string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 250 || (request.Reason?.Length ?? 0) > 1000
+        || !new[] { "lesson", "quiz", "flashcard" }.Contains(request.Kind))
         return Results.BadRequest(new { message = "Dados de revisão inválidos." });
     var userId = GetUserId(principal);
+    var moduleTitle = request.ModuleTitle ?? "";
     var entity = await db.Reviews.SingleOrDefaultAsync(x => x.UserId == userId && x.ItemKey == request.ItemKey);
     if (entity is null)
-        db.Reviews.Add(new ReviewEntry { UserId = userId, ItemKey = request.ItemKey, Title = request.Title.Trim(), ModuleId = request.ModuleId, ModuleTitle = request.ModuleTitle, Kind = request.Kind, Reason = request.Reason ?? "", IsResolved = request.IsResolved });
-    else { entity.Title = request.Title.Trim(); entity.ModuleId = request.ModuleId; entity.ModuleTitle = request.ModuleTitle; entity.Kind = request.Kind; entity.Reason = request.Reason ?? ""; entity.IsResolved = request.IsResolved; entity.UpdatedAt = DateTimeOffset.UtcNow; }
+        db.Reviews.Add(new ReviewEntry { UserId = userId, ItemKey = request.ItemKey, Title = request.Title.Trim(), ModuleId = request.ModuleId, ModuleTitle = moduleTitle, Kind = request.Kind, Reason = request.Reason ?? "", IsResolved = request.IsResolved });
+    else { entity.Title = request.Title.Trim(); entity.ModuleId = request.ModuleId; entity.ModuleTitle = moduleTitle; entity.Kind = request.Kind; entity.Reason = request.Reason ?? ""; entity.IsResolved = request.IsResolved; entity.UpdatedAt = DateTimeOffset.UtcNow; }
     await db.SaveChangesAsync();
     return Results.NoContent();
 });

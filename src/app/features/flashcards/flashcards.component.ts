@@ -25,6 +25,7 @@ import { ProgressService } from '../../core/progress.service';
         <button class="button button-outline" type="button" (click)="rate('good')">Sei explicar</button>
         <button class="button button-outline" type="button" (click)="rate('easy')">Domino</button>
       </div>
+      @if (ratingMessage()) { <div class="notice notice-success" role="status">{{ ratingMessage() }}</div> }
     }
     <div class="flashcard-actions">
       <button class="button button-outline" type="button" (click)="previous()" [disabled]="currentIndex() === 0">← Anterior</button>
@@ -39,17 +40,23 @@ export class FlashcardsComponent {
   readonly currentIndex = signal(0);
   readonly revealed = signal(false);
   readonly currentCard = computed(() => this.cards[this.currentIndex()]);
+  readonly ratingMessage = signal('');
   rate(rating: 'again' | 'good' | 'easy'): void {
     const card = this.currentCard();
     this.progress.rateFlashcard(card.id, rating, card.front, card.moduleId, card.moduleTitle);
+    this.ratingMessage.set(rating === 'again'
+      ? 'Guardado. Este flashcard foi adicionado à lista de revisão.'
+      : 'Guardado. Se estava na lista de revisão, foi marcado como revisto.');
   }
 
   previous(): void {
     this.currentIndex.update(index => Math.max(0, index - 1));
     this.revealed.set(false);
+    this.ratingMessage.set('');
   }
   next(): void {
     this.currentIndex.update(index => index === this.cards.length - 1 ? 0 : index + 1);
     this.revealed.set(false);
+    this.ratingMessage.set('');
   }
 }

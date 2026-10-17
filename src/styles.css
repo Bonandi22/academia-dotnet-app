@@ -44,6 +44,7 @@
 .clear-reviews { margin-top: 1rem; }
 .flashcard-rating { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
 .flashcard-rating > span { color: var(--muted, #64748b); margin-right: .3rem; }
+.flashcard-rating + .notice { max-width: 760px; margin: 0 auto; text-align: center; }
 .progress-module-card .progress-panel-label { margin-top: .7rem; }
 @media (max-width: 760px) {
   .dashboard-progress-grid, .progress-stats { grid-template-columns: 1fr; }
