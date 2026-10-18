@@ -10,6 +10,7 @@ public sealed class AcademiaDbContext(DbContextOptions<AcademiaDbContext> option
     public DbSet<ReviewEntry> Reviews => Set<ReviewEntry>();
     public DbSet<QuizAttempt> QuizAttempts => Set<QuizAttempt>();
     public DbSet<FlashcardProgress> Flashcards => Set<FlashcardProgress>();
+    public DbSet<UserSession> Sessions => Set<UserSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +42,10 @@ public sealed class AcademiaDbContext(DbContextOptions<AcademiaDbContext> option
             b.HasKey(x => x.Id); b.Property(x => x.FlashcardId).HasMaxLength(160); b.Property(x => x.Rating).HasMaxLength(20);
             b.HasIndex(x => new { x.UserId, x.FlashcardId }).IsUnique();
             b.HasOne(x => x.User).WithMany(x => x.Flashcards).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<UserSession>(b => {
+            b.HasKey(x => x.Id); b.HasIndex(x => x.UserId);
+            b.HasOne(x => x.User).WithMany(x => x.Sessions).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

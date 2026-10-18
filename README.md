@@ -104,6 +104,7 @@ O que já está aplicado (e coberto por testes de integração onde se aplica):
 - Dependências sem vulnerabilidades conhecidas (`npm audit`, `dotnet list package --vulnerable --include-transitive`).
 
 - Sessão num cookie `HttpOnly` + `SameSite=Strict` (e `Secure` com prefixo `__Host-` fora de Development): o JWT nunca chega ao JavaScript nem ao `localStorage`, por isso um XSS não o consegue roubar. Proteção CSRF: além do SameSite, os pedidos que alteram dados exigem o header `X-Requested-With` (403 sem ele); o CORS só aceita credenciais das origens em `AllowedOrigins`.
+- Sessões guardadas no servidor: cada pedido confirma que a sessão continua ativa, por isso o logout (e "terminar sessão em todos os dispositivos") invalida logo o cookie, mesmo uma cópia roubada. A sessão expira ao fim de 7 dias sem uso e nunca dura mais de 30; enquanto é usada, renova-se sozinha.
 
 ## Executar o Angular
 
@@ -141,7 +142,8 @@ A sincronização envia todo o progresso local num único pedido (`POST /api/lea
 | GET | `/health` | Público | Health check |
 | POST | `/api/auth/register` | Público | Registar conta |
 | POST | `/api/auth/login` | Público | Iniciar sessão (JWT num cookie HttpOnly) |
-| POST | `/api/auth/logout` | Público | Terminar sessão (apaga o cookie) |
+| POST | `/api/auth/logout` | Público | Terminar sessão (revoga-a no servidor e apaga o cookie) |
+| POST | `/api/auth/logout-all` | Sessão | Terminar todas as sessões da conta, em todos os dispositivos |
 | GET | `/api/auth/me` | Sessão | Obter utilizador atual |
 | GET | `/api/learning/snapshot` | Sessão | Obter snapshot de aprendizagem |
 | POST | `/api/learning/sync` | Sessão | Enviar todo o progresso numa transação e receber o snapshot (usado pela app) |
@@ -160,7 +162,7 @@ A sincronização envia todo o progresso local num único pedido (`POST /api/lea
 ## Próximos passos recomendados para produção
 
 1. Testes unitários de componentes Angular e deploy automatizado a partir do CI (o CI em `.github/workflows/ci.yml` já corre tipos, testes, build, scans de dependências e build das imagens).
-2. Revogação de sessões no servidor (hoje um token roubado vale até expirar) e renovação do cookie antes de expirar, em vez de pedir login de hora a hora.
+2. Lista de sessões ativas na página Conta (dispositivo, último uso), para terminar uma a uma; hoje só há "esta" ou "todas".
 3. Recuperação e verificação de conta, política de passwords (lista de passwords comprometidas) e registo que não revele se um email já existe (hoje devolve 409).
 4. Segredos num cofre (Key Vault, secrets do orquestrador) e arranque que falhe se a chave JWT de desenvolvimento chegar a produção.
 5. Utilizador SQL só com as permissões da aplicação em vez de `sa`, ligação encriptada (`Encrypt=True`) e backups automáticos com restauro testado.

@@ -55,6 +55,10 @@ X-Requested-With: XMLHttpRequest
   "rating": "again"
 }
 
-### Terminar sessão (apaga o cookie)
+### Terminar sessão (revoga-a no servidor e apaga o cookie)
 POST {{baseUrl}}/api/auth/logout
+X-Requested-With: XMLHttpRequest
+
+### Terminar todas as sessões da conta (em todos os dispositivos)
+POST {{baseUrl}}/api/auth/logout-all
 X-Requested-With: XMLHttpRequest

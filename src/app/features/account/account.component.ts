@@ -18,6 +18,7 @@ const count = (n: number, singular: string, plural: string): string => `${n} ${n
         <div class="account-avatar">{{ user.displayName.slice(0, 1).toUpperCase() }}</div>
         <span class="eyebrow">Sessão iniciada</span><h2>{{ user.displayName }}</h2><p>{{ user.email }}</p>
         <div class="account-actions"><button class="button" type="button" (click)="syncNow()" [disabled]="busy()">{{ busy() ? 'A sincronizar…' : 'Sincronizar progresso agora' }}</button><button class="button button-outline" type="button" (click)="logout()">Terminar sessão</button></div>
+        <button class="text-button" type="button" (click)="logoutEverywhere()" [disabled]="busy()">Terminar sessão em todos os dispositivos</button>
         @if (message()) { <div class="notice notice-success" role="status">{{ message() }}</div> }
         @if (error()) { <div class="notice notice-error" role="alert">{{ error() }}</div> }
       </section>
@@ -87,6 +88,13 @@ export class AccountComponent {
   }
 
   logout(): void { this.auth.logout(); this.message.set(''); this.error.set(''); }
+
+  async logoutEverywhere(): Promise<void> {
+    this.error.set(''); this.message.set(''); this.busy.set(true);
+    try { await this.auth.logoutEverywhere(); }
+    catch (err) { this.error.set(this.describeError(err)); }
+    finally { this.busy.set(false); }
+  }
 
   private describeError(error: unknown): string {
     if (error instanceof HttpErrorResponse) {

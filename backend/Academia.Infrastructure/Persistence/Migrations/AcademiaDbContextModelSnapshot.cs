@@ -209,6 +209,34 @@ namespace Academia.Infrastructure.Persistence.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Academia.Domain.Entities.UserSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AbsoluteExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Sessions");
+                });
+
             modelBuilder.Entity("Academia.Domain.Entities.FlashcardProgress", b =>
                 {
                     b.HasOne("Academia.Domain.Entities.UserAccount", "User")
@@ -253,6 +281,17 @@ namespace Academia.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Academia.Domain.Entities.UserSession", b =>
+                {
+                    b.HasOne("Academia.Domain.Entities.UserAccount", "User")
+                        .WithMany("Sessions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Academia.Domain.Entities.UserAccount", b =>
                 {
                     b.Navigation("Flashcards");
@@ -262,6 +301,8 @@ namespace Academia.Infrastructure.Persistence.Migrations
                     b.Navigation("QuizAttempts");
 
                     b.Navigation("Reviews");
+
+                    b.Navigation("Sessions");
                 });
 #pragma warning restore 612, 618
         }

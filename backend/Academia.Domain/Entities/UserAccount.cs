@@ -11,4 +11,5 @@ public sealed class UserAccount
     public ICollection<ReviewEntry> Reviews { get; set; } = new List<ReviewEntry>();
     public ICollection<QuizAttempt> QuizAttempts { get; set; } = new List<QuizAttempt>();
     public ICollection<FlashcardProgress> Flashcards { get; set; } = new List<FlashcardProgress>();
+    public ICollection<UserSession> Sessions { get; set; } = new List<UserSession>();
 }

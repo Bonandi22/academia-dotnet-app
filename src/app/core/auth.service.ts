@@ -38,6 +38,14 @@ export class AuthService {
     this.expired.set(false);
   }
 
+  /** Revoga no servidor todas as sessões da conta. Só limpa o estado local se a API confirmar: senão os outros
+   *  dispositivos continuariam ligados sem o utilizador saber. */
+  async logoutEverywhere(): Promise<void> {
+    await firstValueFrom(this.http.post(`${environment.apiBaseUrl}/auth/logout-all`, {}));
+    this.clear();
+    this.expired.set(false);
+  }
+
   /** Termina a sessão por expiração (data local ou 401 da API), para a UI pedir novo login. */
   expireSession(): void {
     if (!this.session()) return;

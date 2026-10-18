@@ -28,6 +28,9 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         ConnectTimeout = 5
     }.ConnectionString;
 
+    /// <summary>Relógio da API (sessões). Testes que o mexem repõem Offset no fim: a fábrica é partilhada pela coleção.</summary>
+    public MutableTimeProvider Clock { get; } = new();
+
     /// <summary>Os testes criam dezenas de contas a partir do mesmo "IP"; só os testes de rate limiting baixam isto.</summary>
     protected virtual int AuthPermitLimit => 100_000;
 
@@ -41,7 +44,11 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         // O TestServer fala HTTP e o CookieContainer não reenvia cookies Secure por HTTP (o browser abre exceção para localhost).
         builder.UseSetting("Auth:CookieSecure", "false");
         // Como em Development: pedidos ilegíveis lançam BadHttpRequestException, para testar o handler que os trata.
-        builder.ConfigureTestServices(services => services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true));
+        builder.ConfigureTestServices(services =>
+        {
+            services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
+            services.AddSingleton<TimeProvider>(Clock);
+        });
     }
 
     public async Task InitializeAsync()
@@ -78,6 +85,13 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         var auth = (await response.Content.ReadFromJsonAsync<AuthResponse>())!;
         return (client, auth);
     }
+}
+
+/// <summary>Hora do sistema mais um desvio ajustável pelos testes.</summary>
+public sealed class MutableTimeProvider : TimeProvider
+{
+    public TimeSpan Offset { get; set; }
+    public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + Offset;
 }
 
 [CollectionDefinition(Name)]
